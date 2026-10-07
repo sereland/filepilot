@@ -3,17 +3,24 @@
 //! 核心逻辑在 filepilot-core crate（可独立测试），这里只做胶水层。
 
 use filepilot_core::{engine, oplog, rules, store, watcher};
+use oplog::OpRecord;
+use rules::Rule;
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::Mutex;
 use store::RuleStore;
-use tauri::{AppHandle, Emitter, Manager, State};
-use watcher::WatchHandle;
+use tauri::{
+    menu::{Menu, MenuItem},
+    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+    AppHandle, Emitter, Manager, State, WindowEvent,
+};
+use tauri_plugin_autostart::{AutoLaunchExt, MacosLauncher};
 
 struct AppState {
     store: Mutex<RuleStore>,
     oplog_path: PathBuf,
-    watcher: Mutex<Option<WatchHandle>>,
+    watcher: Mutex<Option<watcher::WatchHandle>>,
+    monitoring: Mutex<bool>,
 }
 
 impl AppState {
@@ -22,6 +29,7 @@ impl AppState {
             store: Mutex::new(RuleStore::load(&rules_path)),
             oplog_path,
             watcher: Mutex::new(None),
+            monitoring: Mutex::new(false),
         }
     }
 }
@@ -61,15 +69,17 @@ fn preview_rule(state: State<'_, AppState>, id: String) -> Vec<engine::PlanItem>
     engine::dry_run(&rule, &folders)
 }
 
-#[tauri::command]
-fn apply_rule_now(
-    state: State<'_, AppState>,
-    app: AppHandle,
-    id: String,
+fn apply_rule_inner(
+    state: &AppState,
+    app: &AppHandle,
+    id: &str,
 ) -> Result<Vec<OpRecord>, String> {
-    let store = state.store.lock().unwrap();
-    let rule = store.get(&id).ok_or_else(|| "规则不存在".to_string())?;
-    drop(store);
+    let rule = state
+        .store
+        .lock()
+        .unwrap()
+        .get(id)
+        .ok_or_else(|| "规则不存在".to_string())?;
 
     let folders: Vec<PathBuf> = rule.watch_folders.iter().map(PathBuf::from).collect();
     let plan = engine::dry_run(&rule, &folders);
@@ -87,17 +97,30 @@ fn apply_rule_now(
 }
 
 #[tauri::command]
+fn apply_rule_now(
+    state: State<'_, AppState>,
+    app: AppHandle,
+    id: String,
+) -> Result<Vec<OpRecord>, String> {
+    apply_rule_inner(state.inner(), &app, &id)
+}
+
+#[tauri::command]
 fn get_oplog(state: State<'_, AppState>, limit: usize) -> Vec<OpRecord> {
     oplog::read_recent(&state.oplog_path, limit.min(500))
 }
 
-#[tauri::command]
-fn undo_last(state: State<'_, AppState>, app: AppHandle) -> Result<usize, String> {
+fn undo_last_inner(state: &AppState, app: &AppHandle) -> Result<usize, String> {
     let n = oplog::undo_last_batch(&state.oplog_path).map_err(|e| e.to_string())?;
     if n > 0 {
         let _ = app.emit("fp://oplog-updated", ());
     }
     Ok(n)
+}
+
+#[tauri::command]
+fn undo_last(state: State<'_, AppState>, app: AppHandle) -> Result<usize, String> {
+    undo_last_inner(state.inner(), &app)
 }
 
 // ---------- 监控 ----------
@@ -117,12 +140,10 @@ fn watched_folders(state: &AppState) -> Vec<PathBuf> {
     set.into_iter().collect()
 }
 
-#[tauri::command]
-fn start_monitoring(state: State<'_, AppState>, app: AppHandle) -> bool {
-    // 先停掉旧的
-    stop_monitoring_inner(state.inner());
+fn start_monitoring_inner(state: &AppState, app: &AppHandle) -> bool {
+    stop_monitoring_inner(state);
 
-    let folders = watched_folders(state.inner());
+    let folders = watched_folders(state);
     if folders.is_empty() {
         return false;
     }
@@ -146,6 +167,7 @@ fn start_monitoring(state: State<'_, AppState>, app: AppHandle) -> bool {
 
     let handle = watcher::start_watching(folders, callback);
     *state.watcher.lock().unwrap() = Some(handle);
+    *state.monitoring.lock().unwrap() = true;
     true
 }
 
@@ -153,11 +175,43 @@ fn stop_monitoring_inner(state: &AppState) {
     if let Some(handle) = state.watcher.lock().unwrap().take() {
         handle.shutdown();
     }
+    *state.monitoring.lock().unwrap() = false;
 }
 
 #[tauri::command]
-fn stop_monitoring(state: State<'_, AppState>) {
+fn start_monitoring(state: State<'_, AppState>, app: AppHandle) -> bool {
+    let ok = start_monitoring_inner(state.inner(), &app);
+    let _ = app.emit("fp://monitoring-changed", ok);
+    ok
+}
+
+#[tauri::command]
+fn stop_monitoring(state: State<'_, AppState>, app: AppHandle) {
     stop_monitoring_inner(state.inner());
+    let _ = app.emit("fp://monitoring-changed", false);
+}
+
+#[tauri::command]
+fn is_monitoring(state: State<'_, AppState>) -> bool {
+    *state.monitoring.lock().unwrap()
+}
+
+// ---------- 开机自启 ----------
+
+#[tauri::command]
+fn set_autostart(app: AppHandle, enabled: bool) -> Result<bool, String> {
+    let al = app.auto_launch();
+    if enabled {
+        al.enable().map_err(|e| e.to_string())?;
+    } else {
+        al.disable().map_err(|e| e.to_string())?;
+    }
+    Ok(enabled)
+}
+
+#[tauri::command]
+fn is_autostart_enabled(app: AppHandle) -> bool {
+    app.auto_launch().is_enabled().unwrap_or(false)
 }
 
 // ---------- 对话框 ----------
@@ -171,6 +225,65 @@ fn pick_folder(app: AppHandle) -> Option<String> {
         .map(|p| p.to_string())
 }
 
+// ---------- 托盘 ----------
+
+fn build_tray(app: &AppHandle) -> tauri::Result<()> {
+    let show = MenuItem::with_id(app, "show", "显示主窗口", true, None::<&str>)?;
+    let toggle = MenuItem::with_id(app, "toggle_watch", "暂停/恢复监控", true, None::<&str>)?;
+    let undo = MenuItem::with_id(app, "undo", "撤销上次整理", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
+    let menu = Menu::with_items(app, &[&show, &toggle, &undo, &quit])?;
+
+    TrayIconBuilder::new()
+        .icon(app.default_window_icon().unwrap().clone())
+        .tooltip("FilePilot — 先预览，再动手，可撤销")
+        .menu(&menu)
+        .show_menu_on_left_click(false)
+        .on_menu_event(|app, event| match event.id.as_ref() {
+            "show" => {
+                if let Some(w) = app.get_webview_window("main") {
+                    let _ = w.show();
+                    let _ = w.set_focus();
+                }
+            }
+            "toggle_watch" => {
+                let state: State<'_, AppState> = app.state();
+                let monitoring = *state.monitoring.lock().unwrap();
+                if monitoring {
+                    stop_monitoring_inner(state.inner());
+                } else {
+                    start_monitoring_inner(state.inner(), app);
+                }
+                let _ = app.emit(
+                    "fp://monitoring-changed",
+                    *state.monitoring.lock().unwrap(),
+                );
+            }
+            "undo" => {
+                let state: State<'_, AppState> = app.state();
+                let _ = undo_last_inner(state.inner(), app);
+            }
+            "quit" => app.exit(0),
+            _ => {}
+        })
+        .on_tray_icon_event(|tray, event| {
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
+                let app = tray.app_handle();
+                if let Some(w) = app.get_webview_window("main") {
+                    let _ = w.show();
+                    let _ = w.set_focus();
+                }
+            }
+        })
+        .build(app)?;
+    Ok(())
+}
+
 // ---------- 入口 ----------
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -178,24 +291,33 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_autostart::init(
+            MacosLauncher::LaunchAgent,
+            None,
+        ))
         .setup(|app| {
             let data_dir = app
                 .path()
                 .app_local_data_dir()
                 .expect("无法获取应用数据目录");
             let _ = std::fs::create_dir_all(&data_dir);
-            let state = AppState::new(
-                data_dir.join("rules.json"),
-                data_dir.join("oplog.jsonl"),
-            );
+            let state = AppState::new(data_dir.join("rules.json"), data_dir.join("oplog.jsonl"));
             app.manage(state);
+            build_tray(app.handle())?;
 
             // 启动时自动开始监控
             let handle = app.handle().clone();
-            let state_ref: tauri::State<'_, AppState> = handle.state();
-            start_monitoring(state_ref, handle);
+            let state_ref: State<'_, AppState> = handle.state();
+            start_monitoring_inner(state_ref.inner(), &handle);
 
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            // 关闭窗口时最小化到托盘，而不是退出
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                let _ = window.hide();
+            }
         })
         .invoke_handler(tauri::generate_handler![
             get_rules,
@@ -208,6 +330,9 @@ pub fn run() {
             undo_last,
             start_monitoring,
             stop_monitoring,
+            is_monitoring,
+            set_autostart,
+            is_autostart_enabled,
             pick_folder,
         ])
         .run(tauri::generate_context!())

@@ -1,50 +1,115 @@
-import { useState } from "react";
-import reactLogo from "./assets/react.svg";
-import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
+import { useCallback, useEffect, useState } from "react";
 import "./App.css";
+import { api } from "./lib/api";
+import type { OpRecord, Rule } from "./lib/types";
+import OplogView from "./views/OplogView";
+import RulesView from "./views/RulesView";
+
+type Tab = "rules" | "oplog";
 
 function App() {
-  const [greetMsg, setGreetMsg] = useState("");
-  const [name, setName] = useState("");
+  const [tab, setTab] = useState<Tab>("rules");
+  const [rules, setRules] = useState<Rule[]>([]);
+  const [records, setRecords] = useState<OpRecord[]>([]);
+  const [monitoring, setMonitoring] = useState(false);
+  const [autostart, setAutostart] = useState(false);
 
-  async function greet() {
-    // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-    setGreetMsg(await invoke("greet", { name }));
-  }
+  const reload = useCallback(async () => {
+    try {
+      const [r, o, m, a] = await Promise.all([
+        api.getRules(),
+        api.getOplog(100),
+        api.isMonitoring(),
+        api.isAutostartEnabled(),
+      ]);
+      setRules(r);
+      setRecords(o);
+      setMonitoring(m);
+      setAutostart(a);
+    } catch {
+      // 非 Tauri 环境（纯浏览器预览）时忽略
+    }
+  }, []);
+
+  useEffect(() => {
+    reload();
+    let unlisten1: (() => void) | undefined;
+    let unlisten2: (() => void) | undefined;
+    listen("fp://oplog-updated", () => reload())
+      .then((fn) => (unlisten1 = fn))
+      .catch(() => {});
+    listen<boolean>("fp://monitoring-changed", (e) => setMonitoring(e.payload))
+      .then((fn) => (unlisten2 = fn))
+      .catch(() => {});
+    return () => {
+      unlisten1?.();
+      unlisten2?.();
+    };
+  }, [reload]);
+
+  const toggleMonitoring = async () => {
+    try {
+      if (monitoring) {
+        await api.stopMonitoring();
+        setMonitoring(false);
+      } else {
+        const ok = await api.startMonitoring();
+        setMonitoring(ok);
+        if (!ok) alert("没有启用的规则或监控文件夹，无法启动监控");
+      }
+    } catch (e) {
+      alert(`操作失败：${e}`);
+    }
+  };
+
+  const toggleAutostart = async () => {
+    try {
+      const ok = await api.setAutostart(!autostart);
+      setAutostart(ok);
+    } catch (e) {
+      alert(`设置失败：${e}`);
+    }
+  };
 
   return (
-    <main className="container">
-      <h1>Welcome to Tauri + React</h1>
-
-      <div className="row">
-        <a href="https://vite.dev" target="_blank">
-          <img src="/vite.svg" className="logo vite" alt="Vite logo" />
-        </a>
-        <a href="https://tauri.app" target="_blank">
-          <img src="/tauri.svg" className="logo tauri" alt="Tauri logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <p>Click on the Tauri, Vite, and React logos to learn more.</p>
-
-      <form
-        className="row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          greet();
-        }}
-      >
-        <input
-          id="greet-input"
-          onChange={(e) => setName(e.currentTarget.value)}
-          placeholder="Enter a name..."
-        />
-        <button type="submit">Greet</button>
-      </form>
-      <p>{greetMsg}</p>
-    </main>
+    <div className="app">
+      <aside className="sidebar">
+        <div className="brand">
+          <span className="brand-icon">📦</span>
+          <span className="brand-name">FilePilot</span>
+        </div>
+        <nav>
+          <button className={tab === "rules" ? "active" : ""} onClick={() => setTab("rules")}>
+            🧩 整理规则
+          </button>
+          <button className={tab === "oplog" ? "active" : ""} onClick={() => setTab("oplog")}>
+            📜 操作记录
+          </button>
+        </nav>
+        <div className="sidebar-footer">
+          <button
+            className={`monitor-btn ${monitoring ? "on" : "off"}`}
+            onClick={toggleMonitoring}
+            title="自动监控文件夹变化并执行规则"
+          >
+            {monitoring ? "● 监控中" : "○ 已暂停"}
+          </button>
+          <label className="autostart-row">
+            <input type="checkbox" checked={autostart} onChange={toggleAutostart} />
+            <span className="small">开机自启</span>
+          </label>
+          <div className="muted small slogan">先预览，再动手，可撤销</div>
+        </div>
+      </aside>
+      <main className="content">
+        {tab === "rules" ? (
+          <RulesView rules={rules} onReload={reload} />
+        ) : (
+          <OplogView records={records} onReload={reload} />
+        )}
+      </main>
+    </div>
   );
 }
 
