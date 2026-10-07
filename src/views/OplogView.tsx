@@ -31,7 +31,7 @@ export default function OplogView({ records, onReload }: Props) {
     }
   };
 
-  const canUndo = records.some((r) => !r.undone && r.kind !== "recycle");
+  const canUndo = records.some((r) => !r.undone);
 
   return (
     <div>

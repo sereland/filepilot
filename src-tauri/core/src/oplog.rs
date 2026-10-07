@@ -90,7 +90,7 @@ pub fn undo_last_batch(log_path: &Path) -> std::io::Result<usize> {
     let target_batch = all
         .iter()
         .rev()
-        .find(|r| !r.undone && r.kind != "recycle")
+        .find(|r| !r.undone)
         .map(|r| r.batch_id.clone());
     let batch_id = match target_batch {
         Some(b) => b,
@@ -99,7 +99,7 @@ pub fn undo_last_batch(log_path: &Path) -> std::io::Result<usize> {
 
     let mut undone_count = 0;
     for record in all.iter_mut().rev() {
-        if record.batch_id != batch_id || record.undone || record.kind == "recycle" {
+        if record.batch_id != batch_id || record.undone {
             continue;
         }
         if undo_one(record).is_ok() {
@@ -142,7 +142,78 @@ fn undo_one(record: &OpRecord) -> std::io::Result<()> {
             }
             Ok(())
         }
+        "recycle" => restore_from_trash(&record.src),
         _ => Ok(()),
+    }
+}
+
+/// 从回收站恢复指定原始路径的文件。
+/// 按 original_path 匹配（Windows 路径不区分大小写）；
+/// 回收站中找不到视为用户已手动处理过，跳过。
+#[cfg(any(
+    target_os = "windows",
+    all(
+        unix,
+        not(target_os = "macos"),
+        not(target_os = "ios"),
+        not(target_os = "android")
+    )
+))]
+fn restore_from_trash(src: &str) -> std::io::Result<()> {
+    let items = trash::os_limited::list()
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+    let src_path = Path::new(src);
+    let mut candidates: Vec<_> = items
+        .into_iter()
+        .filter(|it| paths_equal(&it.original_path(), src_path))
+        .collect();
+    if candidates.is_empty() {
+        return Ok(()); // 已不在回收站，可能被用户手动恢复/清空过
+    }
+    // 逐个恢复：同名双胞胎一次只恢复一个，避免 RestoreTwins 错误
+    let mut last_err = None;
+    while let Some(item) = candidates.pop() {
+        match trash::os_limited::restore_all(std::iter::once(item)) {
+            Ok(()) => return Ok(()),
+            Err(e) => last_err = Some(e),
+        }
+    }
+    Err(std::io::Error::new(
+        std::io::ErrorKind::Other,
+        format!(
+            "从回收站恢复失败: {}",
+            last_err.map(|e| e.to_string()).unwrap_or_default()
+        ),
+    ))
+}
+
+/// 不支持 os_limited 的平台：提示手动恢复
+#[cfg(not(any(
+    target_os = "windows",
+    all(
+        unix,
+        not(target_os = "macos"),
+        not(target_os = "ios"),
+        not(target_os = "android")
+    )
+)))]
+fn restore_from_trash(_src: &str) -> std::io::Result<()> {
+    Err(std::io::Error::new(
+        std::io::ErrorKind::Other,
+        "当前平台不支持自动恢复，请手动从系统回收站恢复",
+    ))
+}
+
+/// 路径相等比较（Windows 不区分大小写）
+fn paths_equal(a: &Path, b: &Path) -> bool {
+    #[cfg(target_os = "windows")]
+    {
+        a.as_os_str().to_string_lossy().to_lowercase()
+            == b.as_os_str().to_string_lossy().to_lowercase()
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        a == b
     }
 }
 
@@ -267,6 +338,41 @@ mod tests {
         assert_eq!(n, 1);
         assert!(src.exists(), "原文件应保留");
         assert!(!copied.exists(), "副本应被删除");
+
+        let _ = fs::remove_dir_all(&dir);
+        let _ = fs::remove_file(&log);
+    }
+
+    #[test]
+    fn undo_recycle_restores_from_trash() {
+        let dir = std::env::temp_dir().join("filepilot_oplog_undorecycle");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let src = dir.join("setup.exe");
+        fs::write(&src, "data").unwrap();
+
+        // 模拟一次移入回收站
+        trash::delete(&src).expect("测试环境需要回收站支持");
+        assert!(!src.exists(), "文件应已进入回收站");
+
+        let log = tmp_log("undorecycle");
+        let r = OpRecord::new(
+            "b1",
+            "r1",
+            "测试",
+            "recycle".into(),
+            src.to_string_lossy().to_string(),
+            None,
+        );
+        append_records(&log, &[r]).unwrap();
+
+        let n = undo_last_batch(&log).unwrap();
+        assert_eq!(n, 1);
+        assert!(src.exists(), "文件应从回收站恢复到原位置");
+
+        // 撤销后标记为 undone，再次撤销应返回 0
+        let n2 = undo_last_batch(&log).unwrap();
+        assert_eq!(n2, 0);
 
         let _ = fs::remove_dir_all(&dir);
         let _ = fs::remove_file(&log);
