@@ -87,9 +87,9 @@ pub fn read_recent(log_path: &Path, limit: usize) -> Vec<OpRecord> {
     all
 }
 
-/// 撤销最近一个未撤销的批次，返回撤销的文件数。
+/// 撤销最近一个未撤销的批次，返回被撤销的记录。
 /// 批次内按逆序撤销（后执行的先回滚）。
-pub fn undo_last_batch(log_path: &Path) -> std::io::Result<usize> {
+pub fn undo_last_batch(log_path: &Path) -> std::io::Result<Vec<OpRecord>> {
     let mut all = read_all(log_path);
     // 找到最近的未撤销批次
     let target_batch = all
@@ -99,23 +99,23 @@ pub fn undo_last_batch(log_path: &Path) -> std::io::Result<usize> {
         .map(|r| r.batch_id.clone());
     let batch_id = match target_batch {
         Some(b) => b,
-        None => return Ok(0),
+        None => return Ok(Vec::new()),
     };
 
-    let mut undone_count = 0;
+    let mut undone = Vec::new();
     for record in all.iter_mut().rev() {
         if record.batch_id != batch_id || record.undone {
             continue;
         }
         if undo_one(record).is_ok() {
             record.undone = true;
-            undone_count += 1;
+            undone.push(record.clone());
         }
     }
 
     // 写回整份日志（P0 数据量小，全量重写可接受）
     rewrite_all(log_path, &all)?;
-    Ok(undone_count)
+    Ok(undone)
 }
 
 fn undo_one(record: &OpRecord) -> std::io::Result<()> {
@@ -268,7 +268,7 @@ fn restore_from_trash(_record: &OpRecord) -> std::io::Result<()> {
 }
 
 /// 路径归一化后比较：去 verbatim 前缀、统一分隔符、Windows 下不区分大小写
-fn normalize_path(p: &Path) -> String {
+pub fn normalize_path(p: &Path) -> String {
     let mut s = p.as_os_str().to_string_lossy().replace('/', "\\");
     #[cfg(target_os = "windows")]
     {
@@ -282,7 +282,7 @@ fn normalize_path(p: &Path) -> String {
     s
 }
 
-fn paths_equal(a: &Path, b: &Path) -> bool {
+pub fn paths_equal(a: &Path, b: &Path) -> bool {
     normalize_path(a) == normalize_path(b)
 }
 
@@ -370,14 +370,13 @@ mod tests {
         );
         append_records(&log, &[r]).unwrap();
 
-        let n = undo_last_batch(&log).unwrap();
-        assert_eq!(n, 1);
+        let undone = undo_last_batch(&log).unwrap();
+        assert_eq!(undone.len(), 1);
         assert!(src.exists(), "文件应被移回原位置");
         assert!(!moved.exists());
 
         // 撤销后标记为 undone，再次撤销应返回 0
-        let n2 = undo_last_batch(&log).unwrap();
-        assert_eq!(n2, 0);
+        assert!(undo_last_batch(&log).unwrap().is_empty());
 
         let _ = fs::remove_dir_all(&dir);
         let _ = fs::remove_file(&log);
@@ -405,8 +404,8 @@ mod tests {
         );
         append_records(&log, &[r]).unwrap();
 
-        let n = undo_last_batch(&log).unwrap();
-        assert_eq!(n, 1);
+        let undone = undo_last_batch(&log).unwrap();
+        assert_eq!(undone.len(), 1);
         assert!(src.exists(), "原文件应保留");
         assert!(!copied.exists(), "副本应被删除");
 
@@ -438,13 +437,12 @@ mod tests {
         );
         append_records(&log, &[r]).unwrap();
 
-        let n = undo_last_batch(&log).unwrap();
-        assert_eq!(n, 1);
+        let undone = undo_last_batch(&log).unwrap();
+        assert_eq!(undone.len(), 1);
         assert!(src.exists(), "文件应从回收站恢复到原位置");
 
         // 撤销后标记为 undone，再次撤销应返回 0
-        let n2 = undo_last_batch(&log).unwrap();
-        assert_eq!(n2, 0);
+        assert!(undo_last_batch(&log).unwrap().is_empty());
 
         let _ = fs::remove_dir_all(&dir);
         let _ = fs::remove_file(&log);
@@ -485,8 +483,8 @@ mod tests {
         );
         append_records(&log, &records).unwrap();
 
-        let n = undo_last_batch(&log).unwrap();
-        assert_eq!(n, 1);
+        let undone = undo_last_batch(&log).unwrap();
+        assert_eq!(undone.len(), 1);
         assert!(src.exists(), "文件应从回收站恢复到原位置");
 
         let _ = fs::remove_dir_all(&dir);

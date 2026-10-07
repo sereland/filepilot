@@ -94,7 +94,12 @@ pub fn start_watching(folders: Vec<PathBuf>, on_settled: ApplyCallback) -> Watch
 
 /// 对单个文件夹跑所有启用的相关规则，返回执行的操作数。
 /// engine 层函数，供 watcher 回调和 Tauri command 共用。
-pub fn apply_rules_for_folder(rules: &[Rule], folder: &Path) -> Vec<(String, Vec<crate::oplog::OpRecord>)> {
+/// should_skip：返回 true 的文件会被跳过（用于撤销保护等场景）。
+pub fn apply_rules_for_folder(
+    rules: &[Rule],
+    folder: &Path,
+    should_skip: &dyn Fn(&Path) -> bool,
+) -> Vec<(String, Vec<crate::oplog::OpRecord>)> {
     let mut out = Vec::new();
     for rule in rules.iter().filter(|r| r.enabled) {
         let watches = rule
@@ -105,6 +110,10 @@ pub fn apply_rules_for_folder(rules: &[Rule], folder: &Path) -> Vec<(String, Vec
             continue;
         }
         let plan = engine::dry_run(rule, &[folder.to_path_buf()]);
+        let plan: Vec<_> = plan
+            .into_iter()
+            .filter(|p| !should_skip(Path::new(&p.src)))
+            .collect();
         if plan.is_empty() {
             continue;
         }
@@ -155,12 +164,44 @@ mod tests {
             ..rule_on.clone()
         };
 
-        let res = apply_rules_for_folder(&[rule_on, rule_off], &dir);
+        let res = apply_rules_for_folder(&[rule_on, rule_off], &dir, &|_| false);
         assert_eq!(res.len(), 1, "只有启用的规则应执行");
         assert_eq!(res[0].0, "on");
         assert!(dest.join("a.pdf").exists());
         assert!(dir.join("b.txt").exists(), "不匹配的文件不动");
 
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn skipped_files_are_not_processed() {
+        let dir = std::env::temp_dir().join("filepilot_skip_test");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let dest = dir.join("dest");
+        std::fs::create_dir_all(&dest).unwrap();
+        // 两个匹配文件：一个在跳过名单里，一个不在
+        let keep = dir.join("keep.pdf");
+        let move_me = dir.join("move.pdf");
+        std::fs::write(&keep, b"x").unwrap();
+        std::fs::write(&move_me, b"y").unwrap();
+        // 让文件静默（修改时间 10 秒前）
+        set_old(&keep);
+        set_old(&move_me);
+
+        let rule = Rule {
+            id: "r".into(),
+            name: "规则".into(),
+            enabled: true,
+            watch_folders: vec![dir.to_string_lossy().to_string()],
+            conditions: vec![Condition::Extension { exts: vec!["pdf".into()] }],
+            actions: vec![Action::Move { dest: dest.to_string_lossy().to_string() }],
+        };
+        let skip_target = keep.clone();
+        let res = apply_rules_for_folder(&[rule], &dir, &|p| p == skip_target);
+        assert_eq!(res.len(), 1);
+        assert!(keep.exists(), "被跳过的文件应留在原地");
+        assert!(dest.join("move.pdf").exists(), "未被跳过的文件应被移动");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

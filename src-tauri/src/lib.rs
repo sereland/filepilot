@@ -6,8 +6,9 @@ use filepilot_core::{engine, oplog, rules, store, watcher};
 use oplog::OpRecord;
 use rules::Rule;
 use std::collections::HashSet;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
+use std::time::SystemTime;
 use store::RuleStore;
 use tauri::{
     menu::{Menu, MenuItem},
@@ -21,16 +22,54 @@ struct AppState {
     oplog_path: PathBuf,
     watcher: Mutex<Option<watcher::WatchHandle>>,
     monitoring: Mutex<bool>,
+    /// 撤销保护名单：(文件路径, 撤销时间)，持久化到磁盘。
+    /// 监控扫描时跳过"撤销后未被修改过"的文件，避免撤销→恢复→被规则再次处理→无限循环。
+    recently_undone: Mutex<Vec<(PathBuf, SystemTime)>>,
+    skip_list_path: PathBuf,
 }
 
 impl AppState {
-    fn new(rules_path: PathBuf, oplog_path: PathBuf) -> Self {
+    fn new(rules_path: PathBuf, oplog_path: PathBuf, skip_list_path: PathBuf) -> Self {
         Self {
             store: Mutex::new(RuleStore::load(&rules_path)),
             oplog_path,
             watcher: Mutex::new(None),
             monitoring: Mutex::new(false),
+            recently_undone: Mutex::new(load_skip_list(&skip_list_path)),
+            skip_list_path,
         }
+    }
+}
+
+/// 从磁盘加载撤销保护名单（JSON：[(路径, 撤销时间的 unix 秒)]），损坏或缺失时返回空
+fn load_skip_list(path: &Path) -> Vec<(PathBuf, SystemTime)> {
+    let data = std::fs::read_to_string(path).unwrap_or_default();
+    if data.trim().is_empty() {
+        return Vec::new();
+    }
+    serde_json::from_str::<Vec<(String, u64)>>(data.as_str())
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|(p, secs)| {
+            SystemTime::UNIX_EPOCH
+                .checked_add(std::time::Duration::from_secs(secs))
+                .map(|t| (PathBuf::from(p), t))
+        })
+        .collect()
+}
+
+/// 持久化撤销保护名单，失败时静默忽略（下次撤销会重试）
+fn save_skip_list(path: &Path, list: &[(PathBuf, SystemTime)]) {
+    let data: Vec<(String, u64)> = list
+        .iter()
+        .filter_map(|(p, t)| {
+            t.duration_since(SystemTime::UNIX_EPOCH)
+                .ok()
+                .map(|d| (p.to_string_lossy().to_string(), d.as_secs()))
+        })
+        .collect();
+    if let Ok(json) = serde_json::to_string(&data) {
+        let _ = std::fs::write(path, json);
     }
 }
 
@@ -111,11 +150,21 @@ fn get_oplog(state: State<'_, AppState>, limit: usize) -> Vec<OpRecord> {
 }
 
 fn undo_last_inner(state: &AppState, app: &AppHandle) -> Result<usize, String> {
-    let n = oplog::undo_last_batch(&state.oplog_path).map_err(|e| e.to_string())?;
-    if n > 0 {
+    let undone = oplog::undo_last_batch(&state.oplog_path).map_err(|e| e.to_string())?;
+    if !undone.is_empty() {
+        // 记入撤销保护名单：监控不再自动处理这些文件（除非它们之后被修改/重新下载）
+        let now = SystemTime::now();
+        let mut skip = state.recently_undone.lock().unwrap();
+        for r in &undone {
+            let p = PathBuf::from(&r.src);
+            skip.retain(|(ep, _)| ep != &p);
+            skip.push((p, now));
+        }
+        save_skip_list(&state.skip_list_path, &skip);
+        drop(skip);
         let _ = app.emit("fp://oplog-updated", ());
     }
-    Ok(n)
+    Ok(undone.len())
 }
 
 #[tauri::command]
@@ -152,8 +201,27 @@ fn start_monitoring_inner(state: &AppState, app: &AppHandle) -> bool {
     let oplog_path = state.oplog_path.clone();
     let callback: watcher::ApplyCallback = Box::new(move |folder| {
         let app_state: State<'_, AppState> = app2.state();
+        // 快照撤销保护名单，并清理已失效条目（文件已删除或撤销后又被修改过）
+        let skip_list: Vec<(PathBuf, SystemTime)> = {
+            let mut guard = app_state.recently_undone.lock().unwrap();
+            guard.retain(|(p, t)| {
+                std::fs::metadata(p.as_path())
+                    .and_then(|m| m.modified())
+                    .map(|mt| mt <= *t)
+                    .unwrap_or(false)
+            });
+            guard.clone()
+        };
+        let should_skip = |path: &Path| -> bool {
+            match std::fs::metadata(path).and_then(|m| m.modified()) {
+                Some(mt) => skip_list
+                    .iter()
+                    .any(|(p, t)| oplog::paths_equal(p, path) && mt <= *t),
+                None => false,
+            }
+        };
         let rules = app_state.store.lock().unwrap().all();
-        let results = watcher::apply_rules_for_folder(&rules, folder);
+        let results = watcher::apply_rules_for_folder(&rules, folder, &should_skip);
         let mut total = 0;
         for (_rule_id, records) in &results {
             total += records.len();
@@ -301,7 +369,11 @@ pub fn run() {
                 .app_local_data_dir()
                 .expect("无法获取应用数据目录");
             let _ = std::fs::create_dir_all(&data_dir);
-            let state = AppState::new(data_dir.join("rules.json"), data_dir.join("oplog.jsonl"));
+            let state = AppState::new(
+                data_dir.join("rules.json"),
+                data_dir.join("oplog.jsonl"),
+                data_dir.join("skip-list.json"),
+            );
             app.manage(state);
             build_tray(app)?;
 
