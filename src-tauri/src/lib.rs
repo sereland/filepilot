@@ -151,7 +151,7 @@ fn start_monitoring_inner(state: &AppState, app: &AppHandle) -> bool {
     let app2 = app.clone();
     let oplog_path = state.oplog_path.clone();
     let callback: watcher::ApplyCallback = Box::new(move |folder| {
-        let app_state: &AppState = app2.state();
+        let app_state: State<'_, AppState> = app2.state();
         let rules = app_state.store.lock().unwrap().all();
         let results = watcher::apply_rules_for_folder(&rules, folder);
         let mut total = 0;
