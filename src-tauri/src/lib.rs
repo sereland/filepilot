@@ -12,9 +12,9 @@ use store::RuleStore;
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    AppHandle, Emitter, Manager, State, WindowEvent,
+    App, AppHandle, Emitter, Manager, State, WindowEvent,
 };
-use tauri_plugin_autostart::{AutoLaunchExt, MacosLauncher};
+use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 
 struct AppState {
     store: Mutex<RuleStore>,
@@ -200,7 +200,7 @@ fn is_monitoring(state: State<'_, AppState>) -> bool {
 
 #[tauri::command]
 fn set_autostart(app: AppHandle, enabled: bool) -> Result<bool, String> {
-    let al = app.auto_launch();
+    let al = app.autolaunch();
     if enabled {
         al.enable().map_err(|e| e.to_string())?;
     } else {
@@ -211,7 +211,7 @@ fn set_autostart(app: AppHandle, enabled: bool) -> Result<bool, String> {
 
 #[tauri::command]
 fn is_autostart_enabled(app: AppHandle) -> bool {
-    app.auto_launch().is_enabled().unwrap_or(false)
+    app.autolaunch().is_enabled().unwrap_or(false)
 }
 
 // ---------- 对话框 ----------
@@ -227,7 +227,7 @@ fn pick_folder(app: AppHandle) -> Option<String> {
 
 // ---------- 托盘 ----------
 
-fn build_tray(app: &AppHandle) -> tauri::Result<()> {
+fn build_tray(app: &App) -> tauri::Result<()> {
     let show = MenuItem::with_id(app, "show", "显示主窗口", true, None::<&str>)?;
     let toggle = MenuItem::with_id(app, "toggle_watch", "暂停/恢复监控", true, None::<&str>)?;
     let undo = MenuItem::with_id(app, "undo", "撤销上次整理", true, None::<&str>)?;
@@ -303,7 +303,7 @@ pub fn run() {
             let _ = std::fs::create_dir_all(&data_dir);
             let state = AppState::new(data_dir.join("rules.json"), data_dir.join("oplog.jsonl"));
             app.manage(state);
-            build_tray(app.handle())?;
+            build_tray(app)?;
 
             // 启动时自动开始监控
             let handle = app.handle().clone();
