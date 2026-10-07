@@ -214,10 +214,10 @@ fn start_monitoring_inner(state: &AppState, app: &AppHandle) -> bool {
         };
         let should_skip = |path: &Path| -> bool {
             match std::fs::metadata(path).and_then(|m| m.modified()) {
-                Some(mt) => skip_list
+                Ok(mt) => skip_list
                     .iter()
                     .any(|(p, t)| oplog::paths_equal(p, path) && mt <= *t),
-                None => false,
+                Err(_) => false,
             }
         };
         let rules = app_state.store.lock().unwrap().all();
