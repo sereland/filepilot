@@ -156,6 +156,7 @@ pub fn render_rename(pattern: &str, meta: &FileMeta) -> String {
 pub fn apply_plan(plan: &[PlanItem], batch_id: &str, rule_id: &str) -> Vec<OpRecord> {
     let mut records = Vec::new();
     for item in plan {
+        let mut trash_id: Option<String> = None;
         let result: std::io::Result<Option<String>> = match item.kind.as_str() {
             "move" | "rename" => {
                 let dest = PathBuf::from(item.dest.as_ref().unwrap());
@@ -165,9 +166,13 @@ pub fn apply_plan(plan: &[PlanItem], batch_id: &str, rule_id: &str) -> Vec<OpRec
                 let dest = PathBuf::from(item.dest.as_ref().unwrap());
                 copy_file_safely(&item.src, &dest).map(|d| Some(d.to_string_lossy().to_string()))
             }
-            "recycle" => trash::delete(&item.src)
-                .map(|_| None)
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string())),
+            "recycle" => match crate::oplog::trash_delete_capturing_id(&item.src) {
+                Ok(tid) => {
+                    trash_id = tid;
+                    Ok(None)
+                }
+                Err(e) => Err(e),
+            },
             _ => continue,
         };
         if let Ok(dest) = result {
@@ -178,6 +183,7 @@ pub fn apply_plan(plan: &[PlanItem], batch_id: &str, rule_id: &str) -> Vec<OpRec
                 item.kind.clone(),
                 item.src.clone(),
                 dest,
+                trash_id,
             ));
         }
         // 单个文件失败不中断整批（记录 error 日志即可，P0 简化处理）
