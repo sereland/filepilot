@@ -82,7 +82,6 @@ function App() {
           </span>
           <div>
             <div className="brand-name">FilePilot</div>
-            <div className="brand-sub">文件自动整理</div>
           </div>
         </div>
         <nav>

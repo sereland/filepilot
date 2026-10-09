@@ -122,13 +122,13 @@ export default function OplogView({ records, onReload }: Props) {
                   <span className="muted small">
                     {timeAgo(g.timestamp)} · {g.records.length} 个文件
                   </span>
-                  {allUndone && <span className="tag tag-undone">已撤销</span>}
-                  {partial && <span className="tag">部分撤销</span>}
+                  {allUndone && <span className="muted small">已撤销</span>}
+                  {partial && <span className="muted small">部分撤销</span>}
                 </div>
                 <div className="oplog-group-items">
                   {g.records.map((r) => (
                     <div key={r.id} className={`oplog-item ${r.undone ? "undone" : ""}`}>
-                      <span className="tag">{KIND_LABEL[r.kind] ?? r.kind}</span>
+                      <span className="muted small">{KIND_LABEL[r.kind] ?? r.kind}</span>
                       <span className="plan-src" title={r.src}>
                         {fileNameOf(r.src)}
                       </span>
@@ -140,7 +140,7 @@ export default function OplogView({ records, onReload }: Props) {
                           </span>
                         </>
                       )}
-                      {r.undone && <span className="tag tag-undone">已撤销</span>}
+                      {r.undone && <span className="muted small">已撤销</span>}
                     </div>
                   ))}
                 </div>

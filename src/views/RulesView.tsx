@@ -2,12 +2,9 @@ import { useState } from "react";
 import PreviewDialog from "../components/PreviewDialog";
 import RuleEditor from "../components/RuleEditor";
 import {
-  IconEdit,
-  IconEye,
   IconFolder,
   IconInbox,
   IconPlus,
-  IconTrash,
 } from "../components/icons";
 import { api } from "../lib/api";
 import { describeAction, describeCondition, type PlanItem, type Rule } from "../lib/types";
@@ -96,36 +93,28 @@ export default function RulesView({ rules, onReload }: Props) {
                   <span className="slider" />
                 </label>
               </div>
-              <div className="rule-meta">
-                <span className={`rule-status ${rule.enabled ? "on" : "off"}`}>
-                  {rule.enabled ? "启用中" : "已停用"}
-                </span>
-                <span className="rule-folder" title={rule.watch_folders.join("\n")}>
-                  <IconFolder />
-                  {rule.watch_folders.join("、") || "未设置监控文件夹"}
-                </span>
+              <div className="rule-folder" title={rule.watch_folders.join("\n")}>
+                <IconFolder />
+                {rule.watch_folders.join("、") || "未设置监控文件夹"}
               </div>
               <div className="rule-logic">
                 <div className="logic-line">
-                  <span className="tag tag-if">如果</span>
+                  <span className="logic-k">如果</span>
                   <span>{rule.conditions.map(describeCondition).join(" 且 ") || "—"}</span>
                 </div>
                 <div className="logic-line">
-                  <span className="tag tag-then">那么</span>
+                  <span className="logic-k">那么</span>
                   <span>{rule.actions.map(describeAction).join("；") || "—"}</span>
                 </div>
               </div>
               <div className="card-actions">
-                <button className="btn btn-ghost" onClick={() => doPreview(rule)}>
-                  <IconEye />
+                <button className="link-btn" onClick={() => doPreview(rule)}>
                   预览
                 </button>
-                <button className="btn btn-ghost" onClick={() => setEditing(rule)}>
-                  <IconEdit />
+                <button className="link-btn" onClick={() => setEditing(rule)}>
                   编辑
                 </button>
-                <button className="btn btn-ghost danger" onClick={() => doDelete(rule)}>
-                  <IconTrash />
+                <button className="link-btn danger" onClick={() => doDelete(rule)}>
                   删除
                 </button>
               </div>

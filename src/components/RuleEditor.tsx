@@ -97,9 +97,7 @@ export default function RuleEditor({ initial, onClose, onSaved }: Props) {
           </label>
 
           <div className="section">
-            <div className="section-title">
-              <span className="step-num">1</span>监控这些文件夹
-            </div>
+            <div className="section-title">监控这些文件夹</div>
             {rule.watch_folders.map((f) => (
               <div key={f} className="chip-row">
                 <span className="chip" title={f}>
@@ -124,7 +122,6 @@ export default function RuleEditor({ initial, onClose, onSaved }: Props) {
 
           <div className="section">
             <div className="section-title">
-              <span className="step-num">2</span>
               如果 <span className="muted">（以下条件全部满足）</span>
             </div>
             {rule.conditions.map((c, i) => (
@@ -162,9 +159,7 @@ export default function RuleEditor({ initial, onClose, onSaved }: Props) {
           </div>
 
           <div className="section">
-            <div className="section-title">
-              <span className="step-num">3</span>那么执行
-            </div>
+            <div className="section-title">那么执行</div>
             {rule.actions.map((a, i) => (
               <div key={i} className="card">
                 <div className="card-row">
