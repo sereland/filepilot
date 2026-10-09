@@ -498,6 +498,72 @@ input:focus {
   color: var(--muted);
 }
 
+/* ---- 日志时间线 ---- */
+.oplog-timeline {
+  display: flex;
+  flex-direction: column;
+}
+
+.oplog-group {
+  position: relative;
+  padding-left: 24px;
+  padding-bottom: 20px;
+}
+
+/* 纵向时间轴线 */
+.oplog-group::before {
+  content: "";
+  position: absolute;
+  left: 7px;
+  top: 26px;
+  bottom: 2px;
+  width: 2px;
+  background: var(--border);
+  border-radius: 1px;
+}
+
+.oplog-group:last-child::before {
+  display: none;
+}
+
+/* 时间轴圆点 */
+.oplog-dot {
+  position: absolute;
+  left: 0;
+  top: 15px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--surface);
+  border: 3px solid var(--accent);
+}
+
+.oplog-group.undone .oplog-dot {
+  border-color: var(--muted);
+}
+
+.oplog-group-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 2px 8px;
+}
+
+.oplog-group-title {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.oplog-group-items {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.oplog-group.undone .oplog-group-items {
+  opacity: 0.75;
+}
+
 /* ---- 日志 ---- */
 .oplog-list {
   display: flex;
