@@ -1,6 +1,14 @@
 import { useState } from "react";
 import PreviewDialog from "../components/PreviewDialog";
 import RuleEditor from "../components/RuleEditor";
+import {
+  IconEdit,
+  IconEye,
+  IconFolder,
+  IconInbox,
+  IconPlus,
+  IconTrash,
+} from "../components/icons";
 import { api } from "../lib/api";
 import { describeAction, describeCondition, type PlanItem, type Rule } from "../lib/types";
 
@@ -52,24 +60,34 @@ export default function RulesView({ rules, onReload }: Props) {
   return (
     <div>
       <div className="page-header">
-        <h2>整理规则</h2>
+        <div>
+          <h2>整理规则</h2>
+          <p className="page-sub">设定条件，文件会自动归位。每条规则执行前都可预览，执行后可撤销。</p>
+        </div>
         <button className="btn btn-primary" onClick={() => setEditing(null)}>
-          + 新建规则
+          <IconPlus />
+          新建规则
         </button>
       </div>
 
       {rules.length === 0 ? (
         <div className="empty">
-          <p>还没有规则。建一条试试，比如：</p>
-          <p className="muted">「下载文件夹里扩展名为 pdf 的文件 → 移动到 D:\文档」</p>
+          <span className="empty-icon">
+            <IconInbox />
+          </span>
+          <p className="empty-title">还没有规则</p>
+          <p className="muted">建一条试试，比如</p>
+          <span className="empty-example">下载文件夹里扩展名为 pdf 的文件 → 移动到 D:\文档</span>
         </div>
       ) : (
         <div className="rule-grid">
           {rules.map((rule) => (
             <div key={rule.id} className={`rule-card ${rule.enabled ? "" : "disabled"}`}>
               <div className="card-row">
-                <strong>{rule.name}</strong>
-                <label className="switch">
+                <span className="rule-name" title={rule.name}>
+                  {rule.name}
+                </span>
+                <label className="switch" title={rule.enabled ? "停用规则" : "启用规则"}>
                   <input
                     type="checkbox"
                     checked={rule.enabled}
@@ -78,25 +96,36 @@ export default function RulesView({ rules, onReload }: Props) {
                   <span className="slider" />
                 </label>
               </div>
-              <div className="muted small">📁 {rule.watch_folders.join("、") || "未设置"}</div>
+              <div className="rule-meta">
+                <span className={`rule-status ${rule.enabled ? "on" : "off"}`}>
+                  {rule.enabled ? "启用中" : "已停用"}
+                </span>
+                <span className="rule-folder" title={rule.watch_folders.join("\n")}>
+                  <IconFolder />
+                  {rule.watch_folders.join("、") || "未设置监控文件夹"}
+                </span>
+              </div>
               <div className="rule-logic">
-                <div>
-                  <span className="tag tag-if">如果</span>{" "}
-                  {rule.conditions.map(describeCondition).join(" 且 ") || "—"}
+                <div className="logic-line">
+                  <span className="tag tag-if">如果</span>
+                  <span>{rule.conditions.map(describeCondition).join(" 且 ") || "—"}</span>
                 </div>
-                <div>
-                  <span className="tag tag-then">那么</span>{" "}
-                  {rule.actions.map(describeAction).join("；") || "—"}
+                <div className="logic-line">
+                  <span className="tag tag-then">那么</span>
+                  <span>{rule.actions.map(describeAction).join("；") || "—"}</span>
                 </div>
               </div>
               <div className="card-actions">
                 <button className="btn btn-ghost" onClick={() => doPreview(rule)}>
+                  <IconEye />
                   预览
                 </button>
                 <button className="btn btn-ghost" onClick={() => setEditing(rule)}>
+                  <IconEdit />
                   编辑
                 </button>
                 <button className="btn btn-ghost danger" onClick={() => doDelete(rule)}>
+                  <IconTrash />
                   删除
                 </button>
               </div>

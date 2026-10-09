@@ -1,3 +1,4 @@
+import { IconInbox, IconShield, IconX } from "../components/icons";
 import { fileNameOf, type PlanItem } from "../lib/types";
 
 interface Props {
@@ -15,21 +16,26 @@ export default function PreviewDialog({ ruleName, items, running, onConfirm, onC
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <h2>预览：{ruleName}</h2>
-          <button className="icon-btn" onClick={onClose}>
-            ✕
+          <button className="icon-btn" onClick={onClose} aria-label="关闭">
+            <IconX />
           </button>
         </div>
         <div className="modal-body">
           {items.length === 0 ? (
             <div className="empty">
-              <p>没有文件符合这条规则。</p>
-              <p className="muted small">可以先往监控文件夹里放几个测试文件再试。</p>
+              <span className="empty-icon">
+                <IconInbox />
+              </span>
+              <p className="empty-title">没有文件符合这条规则</p>
+              <p className="muted">可以先往监控文件夹里放几个测试文件再试。</p>
             </div>
           ) : (
             <>
-              <p>
-                这条规则将会处理 <strong>{items.length}</strong> 个文件：
-              </p>
+              <div className="plan-summary">
+                <span>这条规则将会处理</span>
+                <span className="count-pill">{items.length}</span>
+                <span className="muted">个文件</span>
+              </div>
               <div className="plan-list">
                 {items.map((it, i) => (
                   <div key={i} className="plan-item">
@@ -37,12 +43,15 @@ export default function PreviewDialog({ ruleName, items, running, onConfirm, onC
                       {fileNameOf(it.src)}
                     </span>
                     <span className="plan-arrow">→</span>
-                    <span className="plan-desc">{it.action_desc}</span>
+                    <span className="plan-desc" title={it.action_desc}>
+                      {it.action_desc}
+                    </span>
                   </div>
                 ))}
               </div>
               <div className="hint">
-                👀 这只是预览，没有动你的文件。确认无误后再点"确认执行"。
+                <IconShield />
+                <span>这只是预览，没有动你的文件。确认无误后再点"确认执行"，执行后随时可撤销。</span>
               </div>
             </>
           )}

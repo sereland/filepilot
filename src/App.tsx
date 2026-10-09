@@ -1,6 +1,7 @@
 import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useState } from "react";
 import "./App.css";
+import { IconBrand, IconHistory, IconLayers } from "./components/icons";
 import { api } from "./lib/api";
 import type { OpRecord, Rule } from "./lib/types";
 import OplogView from "./views/OplogView";
@@ -76,30 +77,47 @@ function App() {
     <div className="app">
       <aside className="sidebar">
         <div className="brand">
-          <span className="brand-icon">📦</span>
-          <span className="brand-name">FilePilot</span>
+          <span className="brand-tile">
+            <IconBrand />
+          </span>
+          <div>
+            <div className="brand-name">FilePilot</div>
+            <div className="brand-sub">文件自动整理</div>
+          </div>
         </div>
         <nav>
-          <button className={tab === "rules" ? "active" : ""} onClick={() => setTab("rules")}>
-            🧩 整理规则
+          <button
+            className={`nav-item ${tab === "rules" ? "active" : ""}`}
+            onClick={() => setTab("rules")}
+          >
+            <IconLayers />
+            整理规则
           </button>
-          <button className={tab === "oplog" ? "active" : ""} onClick={() => setTab("oplog")}>
-            📜 操作记录
+          <button
+            className={`nav-item ${tab === "oplog" ? "active" : ""}`}
+            onClick={() => setTab("oplog")}
+          >
+            <IconHistory />
+            操作记录
           </button>
         </nav>
         <div className="sidebar-footer">
           <button
-            className={`monitor-btn ${monitoring ? "on" : "off"}`}
+            className={`monitor-card ${monitoring ? "on" : "off"}`}
             onClick={toggleMonitoring}
             title="自动监控文件夹变化并执行规则"
           >
-            {monitoring ? "● 监控中" : "○ 已暂停"}
+            <span className="status-dot" />
+            <span>
+              {monitoring ? "监控中" : "已暂停"}
+              <span className="sub">{monitoring ? "规则自动运行" : "点击开启自动整理"}</span>
+            </span>
           </button>
           <label className="autostart-row">
             <input type="checkbox" checked={autostart} onChange={toggleAutostart} />
             <span className="small">开机自启</span>
           </label>
-          <div className="muted small slogan">先预览，再动手，可撤销</div>
+          <div className="slogan">先预览 · 再动手 · 可撤销</div>
         </div>
       </aside>
       <main className="content">

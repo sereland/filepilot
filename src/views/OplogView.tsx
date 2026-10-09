@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { IconInbox, IconUndo } from "../components/icons";
 import { api } from "../lib/api";
 import { fileNameOf, type OpRecord } from "../lib/types";
 
@@ -89,16 +90,23 @@ export default function OplogView({ records, onReload }: Props) {
   return (
     <div>
       <div className="page-header">
-        <h2>操作记录</h2>
+        <div>
+          <h2>操作记录</h2>
+          <p className="page-sub">每次整理按批次记录，点撤销可整体回滚最近的一批。</p>
+        </div>
         <button className="btn btn-secondary" onClick={doUndo} disabled={!nextUndo || undoing}>
-          ↩ {undoing ? "撤销中…" : nextUndo ? `撤销：${nextUndo.rule_name}（${nextUndoCount} 个文件）` : "撤销上次整理"}
+          <IconUndo />
+          {undoing ? "撤销中…" : nextUndo ? `撤销：${nextUndo.rule_name}（${nextUndoCount} 个文件）` : "撤销上次整理"}
         </button>
       </div>
 
       {groups.length === 0 ? (
         <div className="empty">
-          <p>还没有整理记录。</p>
-          <p className="muted small">每次执行规则，这里都会记下"从哪 → 到哪"，随时可撤销。</p>
+          <span className="empty-icon">
+            <IconInbox />
+          </span>
+          <p className="empty-title">还没有整理记录</p>
+          <p className="muted">每次执行规则，这里都会记下"从哪 → 到哪"，随时可撤销。</p>
         </div>
       ) : (
         <div className="oplog-timeline">

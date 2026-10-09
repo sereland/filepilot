@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { api } from "../lib/api";
+import { IconFolder, IconShield, IconX } from "../components/icons";
 import {
   ACTION_LABELS,
   CONDITION_LABELS,
@@ -80,8 +81,8 @@ export default function RuleEditor({ initial, onClose, onSaved }: Props) {
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <h2>{initial ? "编辑规则" : "新建规则"}</h2>
-          <button className="icon-btn" onClick={onClose}>
-            ✕
+          <button className="icon-btn" onClick={onClose} aria-label="关闭">
+            <IconX />
           </button>
         </div>
 
@@ -96,19 +97,23 @@ export default function RuleEditor({ initial, onClose, onSaved }: Props) {
           </label>
 
           <div className="section">
-            <div className="section-title">监控这些文件夹</div>
+            <div className="section-title">
+              <span className="step-num">1</span>监控这些文件夹
+            </div>
             {rule.watch_folders.map((f) => (
               <div key={f} className="chip-row">
                 <span className="chip" title={f}>
-                  📁 {f}
+                  <IconFolder />
+                  {f}
                 </span>
                 <button
                   className="icon-btn"
+                  aria-label="移除文件夹"
                   onClick={() =>
                     set({ watch_folders: rule.watch_folders.filter((x) => x !== f) })
                   }
                 >
-                  ✕
+                  <IconX />
                 </button>
               </div>
             ))}
@@ -119,6 +124,7 @@ export default function RuleEditor({ initial, onClose, onSaved }: Props) {
 
           <div className="section">
             <div className="section-title">
+              <span className="step-num">2</span>
               如果 <span className="muted">（以下条件全部满足）</span>
             </div>
             {rule.conditions.map((c, i) => (
@@ -127,11 +133,12 @@ export default function RuleEditor({ initial, onClose, onSaved }: Props) {
                   <strong>{CONDITION_LABELS[c.type]}</strong>
                   <button
                     className="icon-btn"
+                    aria-label="删除条件"
                     onClick={() =>
                       set({ conditions: rule.conditions.filter((_, j) => j !== i) })
                     }
                   >
-                    ✕
+                    <IconX />
                   </button>
                 </div>
                 <ConditionFields
@@ -155,18 +162,21 @@ export default function RuleEditor({ initial, onClose, onSaved }: Props) {
           </div>
 
           <div className="section">
-            <div className="section-title">那么执行</div>
+            <div className="section-title">
+              <span className="step-num">3</span>那么执行
+            </div>
             {rule.actions.map((a, i) => (
               <div key={i} className="card">
                 <div className="card-row">
                   <strong>{ACTION_LABELS[a.type]}</strong>
                   <button
                     className="icon-btn"
+                    aria-label="删除动作"
                     onClick={() =>
                       set({ actions: rule.actions.filter((_, j) => j !== i) })
                     }
                   >
-                    ✕
+                    <IconX />
                   </button>
                 </div>
                 <ActionFields
@@ -187,8 +197,11 @@ export default function RuleEditor({ initial, onClose, onSaved }: Props) {
             </div>
             {rule.actions.some((a) => a.type === "rename") && (
               <div className="hint">
-                重命名支持变量：{"{name}"} 原文件名、{"{ext}"} 扩展名、{"{date}"}{" "}
-                日期(2026-10-07)、{"{datetime}"} 日期时间
+                <IconShield />
+                <span>
+                  重命名支持变量：{"{name}"} 原文件名、{"{ext}"} 扩展名、{"{date}"}{" "}
+                  日期(2026-10-07)、{"{datetime}"} 日期时间
+                </span>
               </div>
             )}
           </div>
