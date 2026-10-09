@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FilePilot — 活力糖果风</title>
+<style>
+  /* ===== 活力糖果风 - Figma / Craft 风格 ===== */
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+  :root {
+    /* 明亮色彩系统 */
+    --bg: #fafbfc;
+    --surface: #ffffff;
+
+    --text: #1a1a2e;
+    --text-muted: #6e6e80;
+
+    /* 彩色品牌 */
+    --purple: #8b5cf6;
+    --blue: #3b82f6;
+    --green: #10b981;
+    --orange: #f59e0b;
+    --pink: #ec4899;
+    --red: #ef4444;
+
+    /* 浅色背景 */
+    --purple-light: #f5f3ff;
+    --blue-light: #eff6ff;
+    --green-light: #d1fae5;
+    --orange-light: #fef3c7;
+    --pink-light: #fce7f3;
+
+    --radius: 12px;
+    --shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+    --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.12);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Inter', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 14px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .app { display: flex; height: 100vh; }
+
+  /* 侧边栏 */
+  .sidebar {
+    width: 260px;
+    flex-shrink: 0;
+    background: var(--surface);
+    border-right: 2px solid #f0f0f5;
+    display: flex;
+    flex-direction: column;
+    padding: 24px 16px;
+  }
+
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px;
+    margin-bottom: 24px;
+  }
+
+  .brand-icon {
+    width: 48px;
+    height: 48px;
+    background: linear-gradient(135deg, var(--purple), var(--pink));
+    border-radius: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3);
+  }
+
+  .brand-name {
+    font-size: 20px;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+  }
+
+  .nav { display: flex; flex-direction: column; gap: 6px; }
+
+  .nav-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+    border-radius: 10px;
+    color: var(--text-muted);
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    border: none;
+    background: transparent;
+    font-family: inherit;
+    text-align: left;
+    width: 100%;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .nav-item:hover {
+    background: var(--purple-light);
+    color: var(--purple);
+    transform: translateX(4px);
+  }
+
+  .nav-item.active {
+    background: var(--purple);
+    color: white;
+    box-shadow: 0 4px 12px rgba(139, 92, 246, 0.25);
+  }
+
+  .nav-icon { width: 20px; height: 20px; }
+
+  .sidebar-spacer { flex: 1; }
+
+  /* 监控卡 - 渐变背景 */
+  .monitor-card {
+    background: linear-gradient(135deg, var(--green), #06b6d4);
+    border-radius: 14px;
+    padding: 16px;
+    color: white;
+    box-shadow: 0 6px 16px rgba(16, 185, 129, 0.3);
+    cursor: pointer;
+    transition: all 0.3s ease;
+  }
+
+  .monitor-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 10px 24px rgba(16, 185, 129, 0.4);
+  }
+
+  .monitor-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+
+  .status-icon {
+    width: 20px;
+    height: 20px;
+    background: rgba(255, 255, 255, 0.3);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .monitor-title {
+    font-size: 15px;
+    font-weight: 700;
+  }
+
+  .monitor-stats {
+    font-size: 13px;
+    opacity: 0.95;
+    line-height: 1.5;
+  }
+
+  /* 主内容 */
+  .main {
+    flex: 1;
+    overflow-y: auto;
+    padding: 32px 40px;
+  }
+
+  /* 页面头部 */
+  .page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 32px;
+  }
+
+  .page-title {
+    font-size: 32px;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    background: linear-gradient(135deg, var(--purple), var(--pink));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .btn-primary {
+    background: linear-gradient(135deg, var(--purple), var(--pink));
+    color: white;
+    border: none;
+    border-radius: 10px;
+    padding: 12px 20px;
+    font-size: 14px;
+    font-weight: 700;
+    font-family: inherit;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3);
+  }
+
+  .btn-primary:hover {
+    transform: translateY(-2px) scale(1.02);
+    box-shadow: 0 6px 18px rgba(139, 92, 246, 0.4);
+  }
+
+  /* 规则网格 */
+  .rules-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+    gap: 20px;
+  }
+
+  /* 规则卡片 - 彩色边框 */
+  .rule-card {
+    background: var(--surface);
+    border: 3px solid transparent;
+    border-radius: 16px;
+    padding: 20px;
+    box-shadow: var(--shadow);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+  }
+
+  .rule-card::before {
+    content: '';
+    position: absolute;
+    inset: -3px;
+    border-radius: 16px;
+    padding: 3px;
+    background: linear-gradient(135deg, var(--purple), var(--pink));
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+  }
+
+  .rule-card:hover::before {
+    opacity: 1;
+  }
+
+  .rule-card:hover {
+    transform: translateY(-4px);
+    box-shadow: var(--shadow-lg);
+  }
+
+  .rule-card.color-blue::before { background: linear-gradient(135deg, var(--blue), var(--purple)); }
+  .rule-card.color-green::before { background: linear-gradient(135deg, var(--green), var(--blue)); }
+  .rule-card.color-orange::before { background: linear-gradient(135deg, var(--orange), var(--red)); }
+
+  .rule-card.disabled {
+    opacity: 0.5;
+  }
+
+  .rule-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 16px;
+  }
+
+  .rule-name {
+    font-size: 17px;
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+
+  .rule-folder {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--text-muted);
+    background: var(--purple-light);
+    padding: 4px 10px;
+    border-radius: 6px;
+    margin-top: 4px;
+  }
+
+  /* 彩色 Toggle */
+  .toggle {
+    width: 52px;
+    height: 28px;
+    background: #e5e7eb;
+    border-radius: 14px;
+    border: none;
+    cursor: pointer;
+    position: relative;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .toggle::after {
+    content: '';
+    position: absolute;
+    left: 3px;
+    top: 3px;
+    width: 22px;
+    height: 22px;
+    background: white;
+    border-radius: 50%;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  }
+
+  .toggle.active {
+    background: linear-gradient(135deg, var(--green), #06b6d4);
+  }
+
+  .toggle.active::after {
+    left: 27px;
+  }
+
+  /* 规则内容 */
+  .rule-content {
+    background: linear-gradient(135deg, var(--purple-light), var(--blue-light));
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 16px;
+  }
+
+  .rule-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    margin-bottom: 10px;
+    font-size: 13px;
+  }
+
+  .rule-row:last-child {
+    margin-bottom: 0;
+  }
+
+  .rule-emoji {
+    font-size: 16px;
+    flex-shrink: 0;
+  }
+
+  .rule-text {
+    color: var(--text);
+    line-height: 1.6;
+  }
+
+  .rule-text strong {
+    font-weight: 600;
+    color: var(--purple);
+  }
+
+  /* 按钮组 - 圆润风格 */
+  .rule-actions {
+    display: flex;
+    gap: 8px;
+  }
+
+  .action-btn {
+    flex: 1;
+    background: var(--bg);
+    border: 2px solid #f0f0f5;
+    color: var(--text-muted);
+    font-size: 13px;
+    font-weight: 600;
+    padding: 8px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-family: inherit;
+    transition: all 0.2s ease;
+  }
+
+  .action-btn:hover {
+    border-color: var(--purple);
+    color: var(--purple);
+    background: var(--purple-light);
+  }
+
+  .action-btn.danger:hover {
+    border-color: var(--red);
+    color: var(--red);
+    background: #fef2f2;
+  }
+
+  /* 滚动条 */
+  ::-webkit-scrollbar { width: 10px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb {
+    background: linear-gradient(135deg, var(--purple), var(--pink));
+    border-radius: 5px;
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-icon">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+        </svg>
+      </div>
+      <div class="brand-name">FilePilot</div>
+    </div>
+
+    <nav class="nav">
+      <button class="nav-item active">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3" y2="6"/><line x1="3" y1="12" x2="3" y2="12"/><line x1="3" y1="18" x2="3" y2="18"/>
+        </svg>
+        整理规则
+      </button>
+      <button class="nav-item">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+        </svg>
+        操作记录
+      </button>
+      <button class="nav-item">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+        </svg>
+        设置
+      </button>
+    </nav>
+
+    <div class="sidebar-spacer"></div>
+
+    <div class="monitor-card">
+      <div class="monitor-status">
+        <span class="status-icon">✓</span>
+        <span class="monitor-title">监控中</span>
+      </div>
+      <div class="monitor-stats">3 条规则生效<br>2 个文件夹 · 实时监控</div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="page-header">
+      <h1 class="page-title">整理规则</h1>
+      <button class="btn-primary">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+          <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+        </svg>
+        新建规则
+      </button>
+    </div>
+
+    <div class="rules-grid">
+      <div class="rule-card color-blue">
+        <div class="rule-header">
+          <div>
+            <div class="rule-name">🖼️ 图片自动分类</div>
+            <div class="rule-folder">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+              </svg>
+              Downloads
+            </div>
+          </div>
+          <button class="toggle active"></button>
+        </div>
+
+        <div class="rule-content">
+          <div class="rule-row">
+            <span class="rule-emoji">🔍</span>
+            <div class="rule-text">如果文件类型是 <strong>.png / .jpg / .jpeg</strong></div>
+          </div>
+          <div class="rule-row">
+            <span class="rule-emoji">📂</span>
+            <div class="rule-text">移动到 <strong>图片\</strong>，按月份建子文件夹</div>
+          </div>
+        </div>
+
+        <div class="rule-actions">
+          <button class="action-btn">编辑</button>
+          <button class="action-btn">预览</button>
+          <button class="action-btn danger">删除</button>
+        </div>
+      </div>
+
+      <div class="rule-card color-green">
+        <div class="rule-header">
+          <div>
+            <div class="rule-name">📄 文档归档</div>
+            <div class="rule-folder">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+              </svg>
+              Downloads
+            </div>
+          </div>
+          <button class="toggle active"></button>
+        </div>
+
+        <div class="rule-content">
+          <div class="rule-row">
+            <span class="rule-emoji">🔍</span>
+            <div class="rule-text">如果文件类型是 <strong>.pdf / .docx / .xlsx</strong></div>
+          </div>
+          <div class="rule-row">
+            <span class="rule-emoji">📂</span>
+            <div class="rule-text">移动到 <strong>文档\</strong></div>
+          </div>
+        </div>
+
+        <div class="rule-actions">
+          <button class="action-btn">编辑</button>
+          <button class="action-btn">预览</button>
+          <button class="action-btn danger">删除</button>
+        </div>
+      </div>
+
+      <div class="rule-card color-orange disabled">
+        <div class="rule-header">
+          <div>
+            <div class="rule-name">🗑️ 安装包清理</div>
+            <div class="rule-folder">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+              </svg>
+              Desktop
+            </div>
+          </div>
+          <button class="toggle"></button>
+        </div>
+
+        <div class="rule-content">
+          <div class="rule-row">
+            <span class="rule-emoji">🔍</span>
+            <div class="rule-text">如果文件类型是 <strong>.exe / .msi</strong>，且 30 天未修改</div>
+          </div>
+          <div class="rule-row">
+            <span class="rule-emoji">🗑️</span>
+            <div class="rule-text">移动到回收站</div>
+          </div>
+        </div>
+
+        <div class="rule-actions">
+          <button class="action-btn">编辑</button>
+          <button class="action-btn">预览</button>
+          <button class="action-btn danger">删除</button>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+  document.querySelectorAll('.nav-item').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+    });
+  });
+
+  document.querySelectorAll('.toggle').forEach(toggle => {
+    toggle.addEventListener('click', () => {
+      toggle.classList.toggle('active');
+      toggle.closest('.rule-card').classList.toggle('disabled');
+    });
+  });
+</script>
+</body>
+</html>

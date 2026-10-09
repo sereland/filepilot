@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import "./App.css";
 import { IconBrand, IconHistory, IconLayers, IconSettings } from "./components/icons";
 import { api } from "./lib/api";
+import { initTheme } from "./lib/theme";
 import type { OpRecord, Rule } from "./lib/types";
 import OplogView from "./views/OplogView";
 import RulesView from "./views/RulesView";
@@ -32,6 +33,9 @@ function App() {
   }, []);
 
   useEffect(() => {
+    // 初始化主题系统
+    const cleanup = initTheme();
+
     reload();
     let unlisten1: (() => void) | undefined;
     let unlisten2: (() => void) | undefined;
@@ -41,9 +45,11 @@ function App() {
     listen<boolean>("fp://monitoring-changed", (e) => setMonitoring(e.payload))
       .then((fn) => (unlisten2 = fn))
       .catch(() => {});
+
     return () => {
       unlisten1?.();
       unlisten2?.();
+      cleanup?.();
     };
   }, [reload]);
 

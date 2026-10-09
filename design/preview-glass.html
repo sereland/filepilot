@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FilePilot — 毛玻璃轻奢风</title>
+<style>
+  /* ===== 毛玻璃轻奢风 - macOS Big Sur / iOS 风格 ===== */
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+  :root {
+    --bg: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    --glass: rgba(255, 255, 255, 0.1);
+    --glass-strong: rgba(255, 255, 255, 0.15);
+    --glass-hover: rgba(255, 255, 255, 0.2);
+
+    --text: rgba(255, 255, 255, 0.95);
+    --text-muted: rgba(255, 255, 255, 0.7);
+    --text-tertiary: rgba(255, 255, 255, 0.5);
+
+    --border: rgba(255, 255, 255, 0.2);
+    --border-strong: rgba(255, 255, 255, 0.3);
+
+    --accent: #ffffff;
+    --success: #34d399;
+    --warning: #fbbf24;
+    --danger: #f87171;
+
+    --radius: 16px;
+    --radius-lg: 20px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 14px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    overflow: hidden;
+  }
+
+  /* 背景动画粒子 */
+  body::before,
+  body::after {
+    content: '';
+    position: fixed;
+    border-radius: 50%;
+    filter: blur(80px);
+    opacity: 0.4;
+    animation: float 20s ease-in-out infinite;
+  }
+
+  body::before {
+    width: 400px;
+    height: 400px;
+    background: #f093fb;
+    top: -200px;
+    left: -200px;
+  }
+
+  body::after {
+    width: 500px;
+    height: 500px;
+    background: #4facfe;
+    bottom: -250px;
+    right: -250px;
+    animation-delay: -10s;
+  }
+
+  @keyframes float {
+    0%, 100% { transform: translate(0, 0) scale(1); }
+    33% { transform: translate(100px, -50px) scale(1.1); }
+    66% { transform: translate(-50px, 100px) scale(0.9); }
+  }
+
+  .app {
+    display: flex;
+    height: 100vh;
+    position: relative;
+    z-index: 1;
+  }
+
+  /* 侧边栏 - 毛玻璃 */
+  .sidebar {
+    width: 260px;
+    flex-shrink: 0;
+    background: var(--glass);
+    backdrop-filter: blur(40px) saturate(180%);
+    -webkit-backdrop-filter: blur(40px) saturate(180%);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    padding: 24px 16px;
+  }
+
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px;
+    margin-bottom: 24px;
+    background: var(--glass-strong);
+    border-radius: 12px;
+    backdrop-filter: blur(20px);
+  }
+
+  .brand-icon {
+    width: 44px;
+    height: 44px;
+    background: white;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+  }
+
+  .brand-name {
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+
+  .nav {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .nav-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    border-radius: 12px;
+    color: var(--text-muted);
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    border: none;
+    background: transparent;
+    font-family: inherit;
+    text-align: left;
+    width: 100%;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .nav-item:hover {
+    background: var(--glass-hover);
+    color: var(--text);
+  }
+
+  .nav-item.active {
+    background: white;
+    color: #667eea;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  }
+
+  .nav-icon {
+    width: 20px;
+    height: 20px;
+  }
+
+  .sidebar-spacer {
+    flex: 1;
+  }
+
+  /* 监控卡 */
+  .monitor-card {
+    background: var(--glass-strong);
+    backdrop-filter: blur(20px);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+  }
+
+  .monitor-card:hover {
+    background: var(--glass-hover);
+    transform: scale(1.02);
+  }
+
+  .monitor-status {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 8px;
+  }
+
+  .status-ring {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--success);
+    box-shadow: 0 0 0 4px rgba(52, 211, 153, 0.2);
+  }
+
+  .monitor-title {
+    font-size: 15px;
+    font-weight: 600;
+  }
+
+  .monitor-stats {
+    font-size: 13px;
+    color: var(--text-muted);
+    line-height: 1.6;
+  }
+
+  /* 主内容 */
+  .main {
+    flex: 1;
+    overflow-y: auto;
+    padding: 32px;
+  }
+
+  /* 页面头部 */
+  .page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 32px;
+    padding: 24px;
+    background: var(--glass);
+    backdrop-filter: blur(40px) saturate(180%);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+  }
+
+  .page-title {
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+
+  .btn-primary {
+    background: white;
+    color: #667eea;
+    border: none;
+    border-radius: 12px;
+    padding: 12px 24px;
+    font-size: 14px;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  }
+
+  .btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
+  }
+
+  /* 规则网格 */
+  .rules-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 20px;
+  }
+
+  @media (max-width: 1400px) {
+    .rules-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  /* 规则卡片 - 毛玻璃 */
+  .rule-card {
+    background: var(--glass);
+    backdrop-filter: blur(40px) saturate(180%);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 24px;
+    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .rule-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+    background: linear-gradient(90deg, white, transparent);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+  }
+
+  .rule-card:hover {
+    background: var(--glass-strong);
+    border-color: var(--border-strong);
+    transform: translateY(-4px);
+  }
+
+  .rule-card:hover::before {
+    opacity: 1;
+  }
+
+  .rule-card.disabled {
+    opacity: 0.5;
+  }
+
+  .rule-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 16px;
+  }
+
+  .rule-name {
+    font-size: 17px;
+    font-weight: 600;
+    margin-bottom: 8px;
+  }
+
+  .rule-folder {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--text-tertiary);
+  }
+
+  /* Toggle */
+  .toggle {
+    width: 48px;
+    height: 26px;
+    background: var(--glass-strong);
+    backdrop-filter: blur(20px);
+    border: 1px solid var(--border);
+    border-radius: 13px;
+    cursor: pointer;
+    position: relative;
+    transition: all 0.3s ease;
+  }
+
+  .toggle::after {
+    content: '';
+    position: absolute;
+    left: 2px;
+    top: 2px;
+    width: 20px;
+    height: 20px;
+    background: white;
+    border-radius: 50%;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+  }
+
+  .toggle.active {
+    background: var(--success);
+    border-color: var(--success);
+  }
+
+  .toggle.active::after {
+    left: 24px;
+  }
+
+  /* 规则内容 */
+  .rule-content {
+    background: var(--glass-strong);
+    backdrop-filter: blur(20px);
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 16px;
+    border: 1px solid var(--border);
+  }
+
+  .rule-line {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 10px;
+    font-size: 13px;
+  }
+
+  .rule-line:last-child {
+    margin-bottom: 0;
+  }
+
+  .rule-label {
+    color: var(--text-tertiary);
+    font-weight: 600;
+    min-width: 40px;
+    flex-shrink: 0;
+  }
+
+  .rule-value {
+    color: var(--text-muted);
+    line-height: 1.5;
+  }
+
+  /* 操作按钮 */
+  .rule-actions {
+    display: flex;
+    gap: 8px;
+  }
+
+  .action-btn {
+    flex: 1;
+    background: var(--glass-hover);
+    backdrop-filter: blur(20px);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    font-size: 13px;
+    font-weight: 500;
+    padding: 10px 14px;
+    border-radius: 10px;
+    cursor: pointer;
+    font-family: inherit;
+    transition: all 0.2s ease;
+  }
+
+  .action-btn:hover {
+    background: white;
+    color: #667eea;
+    border-color: white;
+  }
+
+  .action-btn.danger:hover {
+    background: var(--danger);
+    color: white;
+    border-color: var(--danger);
+  }
+
+  /* 滚动条 */
+  ::-webkit-scrollbar {
+    width: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: var(--glass-strong);
+    backdrop-filter: blur(10px);
+    border-radius: 4px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--glass-hover);
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-icon">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#667eea" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+        </svg>
+      </div>
+      <div class="brand-name">FilePilot</div>
+    </div>
+
+    <nav class="nav">
+      <button class="nav-item active">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3" y2="6"/><line x1="3" y1="12" x2="3" y2="12"/><line x1="3" y1="18" x2="3" y2="18"/>
+        </svg>
+        整理规则
+      </button>
+      <button class="nav-item">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+        </svg>
+        操作记录
+      </button>
+      <button class="nav-item">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+        </svg>
+        设置
+      </button>
+    </nav>
+
+    <div class="sidebar-spacer"></div>
+
+    <div class="monitor-card">
+      <div class="monitor-status">
+        <span class="status-ring"></span>
+        <span class="monitor-title">监控中</span>
+      </div>
+      <div class="monitor-stats">3 条规则生效<br>2 个文件夹 · 实时监控</div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="page-header">
+      <h1 class="page-title">整理规则</h1>
+      <button class="btn-primary">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+        </svg>
+        新建规则
+      </button>
+    </div>
+
+    <div class="rules-grid">
+      <div class="rule-card">
+        <div class="rule-header">
+          <div>
+            <div class="rule-name">图片自动分类</div>
+            <div class="rule-folder">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+              </svg>
+              C:\Users\lee\Downloads
+            </div>
+          </div>
+          <button class="toggle active"></button>
+        </div>
+
+        <div class="rule-content">
+          <div class="rule-line">
+            <span class="rule-label">如果</span>
+            <span class="rule-value">文件类型是 .png / .jpg / .jpeg</span>
+          </div>
+          <div class="rule-line">
+            <span class="rule-label">那么</span>
+            <span class="rule-value">移动到 图片\，按月份建子文件夹</span>
+          </div>
+        </div>
+
+        <div class="rule-actions">
+          <button class="action-btn">编辑</button>
+          <button class="action-btn">预览</button>
+          <button class="action-btn danger">删除</button>
+        </div>
+      </div>
+
+      <div class="rule-card">
+        <div class="rule-header">
+          <div>
+            <div class="rule-name">文档归档</div>
+            <div class="rule-folder">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+              </svg>
+              C:\Users\lee\Downloads
+            </div>
+          </div>
+          <button class="toggle active"></button>
+        </div>
+
+        <div class="rule-content">
+          <div class="rule-line">
+            <span class="rule-label">如果</span>
+            <span class="rule-value">文件类型是 .pdf / .docx / .xlsx</span>
+          </div>
+          <div class="rule-line">
+            <span class="rule-label">那么</span>
+            <span class="rule-value">移动到 文档\</span>
+          </div>
+        </div>
+
+        <div class="rule-actions">
+          <button class="action-btn">编辑</button>
+          <button class="action-btn">预览</button>
+          <button class="action-btn danger">删除</button>
+        </div>
+      </div>
+
+      <div class="rule-card disabled">
+        <div class="rule-header">
+          <div>
+            <div class="rule-name">安装包清理</div>
+            <div class="rule-folder">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+              </svg>
+              C:\Users\lee\Desktop
+            </div>
+          </div>
+          <button class="toggle"></button>
+        </div>
+
+        <div class="rule-content">
+          <div class="rule-line">
+            <span class="rule-label">如果</span>
+            <span class="rule-value">文件类型是 .exe / .msi，且 30 天未修改</span>
+          </div>
+          <div class="rule-line">
+            <span class="rule-label">那么</span>
+            <span class="rule-value">移动到回收站</span>
+          </div>
+        </div>
+
+        <div class="rule-actions">
+          <button class="action-btn">编辑</button>
+          <button class="action-btn">预览</button>
+          <button class="action-btn danger">删除</button>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+  document.querySelectorAll('.nav-item').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+    });
+  });
+
+  document.querySelectorAll('.toggle').forEach(toggle => {
+    toggle.addEventListener('click', () => {
+      toggle.classList.toggle('active');
+      toggle.closest('.rule-card').classList.toggle('disabled');
+    });
+  });
+</script>
+</body>
+</html>

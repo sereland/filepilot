@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FilePilot — 极简商务风（暗黑模式）</title>
+<style>
+  /* ===== 极简商务风 - 暗黑模式 ===== */
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+  :root {
+    /* 暗色系 - 克制、专业 */
+    --bg: #0a0a0a;
+    --bg-secondary: #141414;
+    --bg-hover: #1a1a1a;
+
+    --text-primary: #f5f5f5;
+    --text-secondary: #a1a1a1;
+    --text-tertiary: #737373;
+
+    --border: #262626;
+    --border-hover: #404040;
+
+    /* 品牌色 - 深蓝（暗黑模式下稍微亮一点）*/
+    --brand: #3b82f6;
+    --brand-hover: #60a5fa;
+    --brand-light: #1e3a5f;
+
+    /* 状态色 */
+    --success: #22c55e;
+    --success-light: #14532d;
+    --warning: #f59e0b;
+    --danger: #ef4444;
+    --danger-light: #7f1d1d;
+
+    /* 几何 */
+    --radius: 8px;
+    --shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.4);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Inter', -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text-primary);
+    font-size: 14px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .app { display: flex; height: 100vh; }
+
+  /* 侧边栏 - 极简 */
+  .sidebar {
+    width: 240px;
+    flex-shrink: 0;
+    background: var(--bg);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    padding: 20px 12px;
+  }
+
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px 24px;
+  }
+
+  .brand-icon {
+    width: 32px;
+    height: 32px;
+    background: var(--text-primary);
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .brand-name {
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+
+  .nav { display: flex; flex-direction: column; gap: 2px; }
+
+  .nav-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    border-radius: 6px;
+    color: var(--text-secondary);
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    border: none;
+    background: transparent;
+    font-family: inherit;
+    text-align: left;
+    width: 100%;
+    transition: all 0.15s ease;
+  }
+
+  .nav-item:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+  }
+
+  .nav-item.active {
+    background: var(--brand-light);
+    color: var(--brand);
+    font-weight: 600;
+  }
+
+  .nav-icon { width: 18px; height: 18px; flex-shrink: 0; }
+
+  .sidebar-spacer { flex: 1; }
+
+  /* 监控卡 - 简洁版 */
+  .monitor-card {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px;
+    margin-top: 12px;
+  }
+
+  .monitor-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+  }
+
+  .status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--brand);
+  }
+
+  .monitor-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .monitor-stats {
+    font-size: 12px;
+    color: var(--text-secondary);
+    padding-left: 16px;
+  }
+
+  /* 主内容 */
+  .main {
+    flex: 1;
+    overflow-y: auto;
+    background: var(--bg-secondary);
+    padding: 32px 40px;
+  }
+
+  /* 页面头部 - 扁平化 */
+  .page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 24px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .page-title {
+    font-size: 24px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    margin-bottom: 4px;
+  }
+
+  .page-subtitle {
+    font-size: 13px;
+    color: var(--text-secondary);
+  }
+
+  .btn-primary {
+    background: var(--brand);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 8px 16px;
+    font-size: 14px;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .btn-primary:hover {
+    background: var(--brand-hover);
+  }
+
+  /* 规则列表 - 单列 */
+  .rules-list {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  /* 规则卡片 - 扁平风格 */
+  .rule-card {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px;
+    transition: all 0.15s ease;
+    box-shadow: var(--shadow);
+  }
+
+  .rule-card:hover {
+    border-color: var(--border-hover);
+    box-shadow: var(--shadow-md);
+  }
+
+  .rule-card.disabled {
+    opacity: 0.5;
+  }
+
+  .rule-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+  }
+
+  .rule-info {
+    flex: 1;
+  }
+
+  .rule-name {
+    font-size: 15px;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+
+  .rule-folder {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: var(--text-tertiary);
+  }
+
+  /* Toggle - 极简版 */
+  .toggle {
+    width: 40px;
+    height: 22px;
+    background: var(--border);
+    border-radius: 11px;
+    border: none;
+    cursor: pointer;
+    position: relative;
+    transition: background 0.2s ease;
+  }
+
+  .toggle::after {
+    content: '';
+    position: absolute;
+    left: 2px;
+    top: 2px;
+    width: 18px;
+    height: 18px;
+    background: white;
+    border-radius: 50%;
+    transition: left 0.2s ease;
+    box-shadow: var(--shadow);
+  }
+
+  .toggle.active {
+    background: var(--brand);
+  }
+
+  .toggle.active::after {
+    left: 20px;
+  }
+
+  /* 规则详情 */
+  .rule-details {
+    padding: 12px 0;
+    border-top: 1px solid var(--border);
+    margin-top: 12px;
+  }
+
+  .rule-line {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 8px;
+    font-size: 13px;
+  }
+
+  .rule-line:last-child {
+    margin-bottom: 0;
+  }
+
+  .rule-label {
+    color: var(--text-tertiary);
+    font-weight: 600;
+    min-width: 40px;
+    flex-shrink: 0;
+  }
+
+  .rule-value {
+    color: var(--text-secondary);
+    line-height: 1.6;
+  }
+
+  /* 操作按钮 - 文字链接风格 */
+  .rule-actions {
+    display: flex;
+    gap: 16px;
+    padding-top: 12px;
+  }
+
+  .action-link {
+    background: none;
+    border: none;
+    color: var(--text-tertiary);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    font-family: inherit;
+    padding: 0;
+    transition: color 0.15s ease;
+  }
+
+  .action-link:hover {
+    color: var(--text-primary);
+  }
+
+  .action-link.primary {
+    color: var(--brand);
+  }
+
+  .action-link.primary:hover {
+    color: var(--brand-hover);
+  }
+
+  .action-link.danger:hover {
+    color: var(--danger);
+  }
+
+  /* 滚动条 */
+  ::-webkit-scrollbar { width: 8px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--border-hover); }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-icon">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
+          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+        </svg>
+      </div>
+      <div class="brand-name">FilePilot</div>
+    </div>
+
+    <nav class="nav">
+      <button class="nav-item active">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3" y2="6"/><line x1="3" y1="12" x2="3" y2="12"/><line x1="3" y1="18" x2="3" y2="18"/>
+        </svg>
+        整理规则
+      </button>
+      <button class="nav-item">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+        </svg>
+        操作记录
+      </button>
+      <button class="nav-item">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+        </svg>
+        设置
+      </button>
+    </nav>
+
+    <div class="sidebar-spacer"></div>
+
+    <div class="monitor-card">
+      <div class="monitor-status">
+        <span class="status-dot"></span>
+        <span class="monitor-title">监控中</span>
+      </div>
+      <div class="monitor-stats">3 条规则 · 2 个文件夹</div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">整理规则</h1>
+        <p class="page-subtitle">自动归档文件，保持工作区整洁有序</p>
+      </div>
+      <button class="btn-primary">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+        </svg>
+        新建规则
+      </button>
+    </div>
+
+    <div class="rules-list">
+      <div class="rule-card">
+        <div class="rule-header">
+          <div class="rule-info">
+            <div class="rule-name">图片自动分类</div>
+            <div class="rule-folder">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+              </svg>
+              C:\Users\lee\Downloads
+            </div>
+          </div>
+          <button class="toggle active"></button>
+        </div>
+
+        <div class="rule-details">
+          <div class="rule-line">
+            <span class="rule-label">如果</span>
+            <span class="rule-value">文件类型是 .png / .jpg / .jpeg</span>
+          </div>
+          <div class="rule-line">
+            <span class="rule-label">那么</span>
+            <span class="rule-value">移动到 图片\，按月份建子文件夹</span>
+          </div>
+        </div>
+
+        <div class="rule-actions">
+          <button class="action-link primary">编辑</button>
+          <button class="action-link">预览</button>
+          <button class="action-link">日志</button>
+          <button class="action-link danger">删除</button>
+        </div>
+      </div>
+
+      <div class="rule-card">
+        <div class="rule-header">
+          <div class="rule-info">
+            <div class="rule-name">文档归档</div>
+            <div class="rule-folder">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+              </svg>
+              C:\Users\lee\Downloads
+            </div>
+          </div>
+          <button class="toggle active"></button>
+        </div>
+
+        <div class="rule-details">
+          <div class="rule-line">
+            <span class="rule-label">如果</span>
+            <span class="rule-value">文件类型是 .pdf / .docx / .xlsx</span>
+          </div>
+          <div class="rule-line">
+            <span class="rule-label">那么</span>
+            <span class="rule-value">移动到 文档\</span>
+          </div>
+        </div>
+
+        <div class="rule-actions">
+          <button class="action-link primary">编辑</button>
+          <button class="action-link">预览</button>
+          <button class="action-link">日志</button>
+          <button class="action-link danger">删除</button>
+        </div>
+      </div>
+
+      <div class="rule-card disabled">
+        <div class="rule-header">
+          <div class="rule-info">
+            <div class="rule-name">安装包清理</div>
+            <div class="rule-folder">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+              </svg>
+              C:\Users\lee\Desktop
+            </div>
+          </div>
+          <button class="toggle"></button>
+        </div>
+
+        <div class="rule-details">
+          <div class="rule-line">
+            <span class="rule-label">如果</span>
+            <span class="rule-value">文件类型是 .exe / .msi，且 30 天未修改</span>
+          </div>
+          <div class="rule-line">
+            <span class="rule-label">那么</span>
+            <span class="rule-value">移动到回收站</span>
+          </div>
+        </div>
+
+        <div class="rule-actions">
+          <button class="action-link primary">编辑</button>
+          <button class="action-link">预览</button>
+          <button class="action-link">日志</button>
+          <button class="action-link danger">删除</button>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+  document.querySelectorAll('.nav-item').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+    });
+  });
+
+  document.querySelectorAll('.toggle').forEach(toggle => {
+    toggle.addEventListener('click', () => {
+      toggle.classList.toggle('active');
+      toggle.closest('.rule-card').classList.toggle('disabled');
+    });
+  });
+</script>
+</body>
+</html>

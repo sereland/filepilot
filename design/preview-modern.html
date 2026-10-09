@@ -1,0 +1,817 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FilePilot — Modern Design Preview</title>
+<style>
+  /* ===== Modern Design System ===== */
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+  :root {
+    /* 色彩系统 - 更丰富的语义化色彩 */
+    --bg-primary: #0a0a0b;
+    --bg-secondary: #18181b;
+    --bg-tertiary: #27272a;
+    --surface: rgba(39, 39, 42, 0.8);
+    --surface-hover: rgba(63, 63, 70, 0.8);
+
+    /* 文字 */
+    --text-primary: #fafafa;
+    --text-secondary: #a1a1aa;
+    --text-tertiary: #71717a;
+
+    /* 品牌色 - 渐变系统 */
+    --brand-from: #3b82f6;
+    --brand-to: #8b5cf6;
+    --brand-solid: #6366f1;
+    --brand-hover: #7c3aed;
+
+    /* 状态色 */
+    --success: #10b981;
+    --success-glow: rgba(16, 185, 129, 0.3);
+    --warning: #f59e0b;
+    --danger: #ef4444;
+
+    /* 边框 */
+    --border: rgba(255, 255, 255, 0.1);
+    --border-hover: rgba(255, 255, 255, 0.2);
+
+    /* 阴影系统 */
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
+    --shadow-lg: 0 10px 40px rgba(0, 0, 0, 0.5);
+    --shadow-glow: 0 0 20px rgba(99, 102, 241, 0.4);
+
+    /* 圆角 */
+    --radius-sm: 8px;
+    --radius-md: 12px;
+    --radius-lg: 16px;
+    --radius-xl: 24px;
+
+    /* 间距节奏 */
+    --space-xs: 8px;
+    --space-sm: 12px;
+    --space-md: 16px;
+    --space-lg: 24px;
+    --space-xl: 32px;
+  }
+
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-size: 14px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+  }
+
+  /* 背景渐变装饰 */
+  body::before {
+    content: '';
+    position: fixed;
+    top: -50%;
+    right: -20%;
+    width: 800px;
+    height: 800px;
+    background: radial-gradient(circle, rgba(99, 102, 241, 0.15) 0%, transparent 70%);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .app {
+    display: flex;
+    height: 100vh;
+    position: relative;
+    z-index: 1;
+  }
+
+  /* ============ 侧边栏 ============ */
+  .sidebar {
+    width: 260px;
+    flex-shrink: 0;
+    background: var(--bg-secondary);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    padding: var(--space-lg);
+    backdrop-filter: blur(20px);
+  }
+
+  /* Brand */
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding-bottom: var(--space-lg);
+    margin-bottom: var(--space-lg);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .brand-icon {
+    width: 40px;
+    height: 40px;
+    background: linear-gradient(135deg, var(--brand-from), var(--brand-to));
+    border-radius: var(--radius-md);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: var(--shadow-glow);
+    animation: pulse 3s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.05); }
+  }
+
+  .brand-name {
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+
+  /* Navigation */
+  .nav {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-xs);
+  }
+
+  .nav-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    border-radius: var(--radius-md);
+    color: var(--text-secondary);
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    border: none;
+    background: transparent;
+    font-family: inherit;
+    text-align: left;
+    width: 100%;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .nav-item::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    background: linear-gradient(135deg, var(--brand-from), var(--brand-to));
+    transform: scaleY(0);
+    transition: transform 0.2s ease;
+  }
+
+  .nav-item:hover {
+    background: var(--surface);
+    color: var(--text-primary);
+    transform: translateX(4px);
+  }
+
+  .nav-item.active {
+    background: var(--surface);
+    color: var(--text-primary);
+    font-weight: 600;
+  }
+
+  .nav-item.active::before {
+    transform: scaleY(1);
+  }
+
+  .nav-icon {
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+  }
+
+  /* Spacer */
+  .sidebar-spacer {
+    flex: 1;
+  }
+
+  /* 监控状态卡 - 精致版 */
+  .monitor-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: var(--space-md);
+    backdrop-filter: blur(20px);
+    box-shadow: var(--shadow-md);
+    transition: all 0.3s ease;
+    cursor: pointer;
+  }
+
+  .monitor-card:hover {
+    border-color: var(--border-hover);
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-lg);
+  }
+
+  .monitor-status {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: var(--space-sm);
+  }
+
+  .status-ring {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--success);
+    box-shadow: 0 0 0 3px var(--success-glow);
+    animation: breathe 2s ease-in-out infinite;
+  }
+
+  @keyframes breathe {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+  }
+
+  .monitor-title {
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  .monitor-stats {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding-left: 22px;
+  }
+
+  .monitor-stat {
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
+
+  /* ============ 主内容区 ============ */
+  .main {
+    flex: 1;
+    overflow-y: auto;
+    padding: var(--space-xl);
+  }
+
+  /* 顶部统计条 */
+  .stats-bar {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: var(--space-md);
+    margin-bottom: var(--space-xl);
+  }
+
+  .stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: var(--space-md);
+    backdrop-filter: blur(20px);
+    transition: all 0.3s ease;
+  }
+
+  .stat-card:hover {
+    border-color: var(--border-hover);
+    transform: translateY(-2px);
+  }
+
+  .stat-label {
+    font-size: 12px;
+    color: var(--text-tertiary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 8px;
+  }
+
+  .stat-value {
+    font-size: 28px;
+    font-weight: 700;
+    background: linear-gradient(135deg, var(--brand-from), var(--brand-to));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .stat-trend {
+    font-size: 12px;
+    color: var(--success);
+    margin-top: 4px;
+  }
+
+  /* 页面头部 */
+  .page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: var(--space-xl);
+  }
+
+  .page-title {
+    font-size: 32px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    margin-bottom: 8px;
+  }
+
+  .page-subtitle {
+    font-size: 15px;
+    color: var(--text-secondary);
+  }
+
+  .btn-primary {
+    background: linear-gradient(135deg, var(--brand-from), var(--brand-to));
+    color: white;
+    border: none;
+    border-radius: var(--radius-md);
+    padding: 12px 24px;
+    font-size: 14px;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    box-shadow: var(--shadow-glow);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 30px rgba(99, 102, 241, 0.5);
+  }
+
+  .btn-primary:active {
+    transform: translateY(0);
+  }
+
+  /* 规则网格 - 双列布局 */
+  .rules-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--space-lg);
+  }
+
+  @media (max-width: 1400px) {
+    .rules-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  /* 规则卡片 - 现代化设计 */
+  .rule-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: var(--space-lg);
+    backdrop-filter: blur(20px);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .rule-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, var(--brand-from), var(--brand-to));
+    transform: scaleX(0);
+    transition: transform 0.3s ease;
+  }
+
+  .rule-card:hover {
+    border-color: var(--border-hover);
+    transform: translateY(-4px);
+    box-shadow: var(--shadow-lg);
+  }
+
+  .rule-card:hover::before {
+    transform: scaleX(1);
+  }
+
+  .rule-card.disabled {
+    opacity: 0.6;
+  }
+
+  .rule-card.disabled:hover {
+    transform: translateY(-2px);
+  }
+
+  /* 卡片头部 */
+  .rule-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: var(--space-md);
+  }
+
+  .rule-name {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 6px;
+  }
+
+  .rule-folder {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--text-tertiary);
+  }
+
+  /* Toggle 开关 - 精致版 */
+  .toggle {
+    position: relative;
+    width: 44px;
+    height: 24px;
+    background: var(--bg-tertiary);
+    border-radius: 12px;
+    border: none;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    flex-shrink: 0;
+  }
+
+  .toggle::after {
+    content: '';
+    position: absolute;
+    left: 2px;
+    top: 2px;
+    width: 20px;
+    height: 20px;
+    background: var(--text-secondary);
+    border-radius: 50%;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: var(--shadow-sm);
+  }
+
+  .toggle.active {
+    background: linear-gradient(135deg, var(--brand-from), var(--brand-to));
+  }
+
+  .toggle.active::after {
+    left: 22px;
+    background: white;
+    box-shadow: 0 0 8px rgba(99, 102, 241, 0.5);
+  }
+
+  /* 规则逻辑 */
+  .rule-logic {
+    background: var(--bg-tertiary);
+    border-radius: var(--radius-md);
+    padding: var(--space-md);
+    margin-bottom: var(--space-md);
+  }
+
+  .rule-line {
+    display: flex;
+    gap: 12px;
+    font-size: 13px;
+    margin-bottom: 8px;
+  }
+
+  .rule-line:last-child {
+    margin-bottom: 0;
+  }
+
+  .rule-label {
+    color: var(--text-tertiary);
+    font-weight: 600;
+    flex-shrink: 0;
+    min-width: 40px;
+  }
+
+  .rule-value {
+    color: var(--text-secondary);
+  }
+
+  /* 卡片操作按钮 */
+  .rule-actions {
+    display: flex;
+    gap: var(--space-xs);
+    padding-top: var(--space-md);
+    border-top: 1px solid var(--border);
+  }
+
+  .action-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-weight: 500;
+    padding: 8px 12px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-family: inherit;
+    transition: all 0.2s ease;
+  }
+
+  .action-btn:hover {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+  }
+
+  .action-btn.primary {
+    color: var(--brand-solid);
+  }
+
+  .action-btn.primary:hover {
+    background: rgba(99, 102, 241, 0.1);
+  }
+
+  .action-btn.danger {
+    color: var(--danger);
+  }
+
+  .action-btn.danger:hover {
+    background: rgba(239, 68, 68, 0.1);
+  }
+
+  /* 空状态 */
+  .empty-state {
+    text-align: center;
+    padding: var(--space-xl) 0;
+    max-width: 500px;
+    margin: 0 auto;
+  }
+
+  .empty-icon {
+    width: 80px;
+    height: 80px;
+    margin: 0 auto var(--space-lg);
+    background: var(--surface);
+    border-radius: var(--radius-xl);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0.6;
+  }
+
+  .empty-title {
+    font-size: 20px;
+    font-weight: 600;
+    margin-bottom: var(--space-sm);
+  }
+
+  .empty-description {
+    color: var(--text-secondary);
+    margin-bottom: var(--space-lg);
+    line-height: 1.6;
+  }
+
+  /* 滚动条样式 */
+  ::-webkit-scrollbar {
+    width: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: var(--bg-tertiary);
+    border-radius: 4px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--border-hover);
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- 侧边栏 -->
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-icon">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+        </svg>
+      </div>
+      <div class="brand-name">FilePilot</div>
+    </div>
+
+    <nav class="nav">
+      <button class="nav-item active">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>
+        </svg>
+        整理规则
+      </button>
+      <button class="nav-item">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+        </svg>
+        操作记录
+      </button>
+      <button class="nav-item">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+        </svg>
+        设置
+      </button>
+    </nav>
+
+    <div class="sidebar-spacer"></div>
+
+    <div class="monitor-card">
+      <div class="monitor-status">
+        <span class="status-ring"></span>
+        <span class="monitor-title">监控中</span>
+      </div>
+      <div class="monitor-stats">
+        <div class="monitor-stat">3 条规则生效</div>
+        <div class="monitor-stat">2 个文件夹 · 实时监控</div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- 主内容区 -->
+  <main class="main">
+    <!-- 顶部统计卡 -->
+    <div class="stats-bar">
+      <div class="stat-card">
+        <div class="stat-label">活跃规则</div>
+        <div class="stat-value">3</div>
+        <div class="stat-trend">↑ 新增 1 条</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">已整理文件</div>
+        <div class="stat-value">1,247</div>
+        <div class="stat-trend">↑ 今天 +15</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">节省时间</div>
+        <div class="stat-value">8.3h</div>
+        <div class="stat-trend">本月累计</div>
+      </div>
+    </div>
+
+    <!-- 页面头部 -->
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">整理规则</h1>
+        <p class="page-subtitle">自动归档文件，保持工作区整洁有序</p>
+      </div>
+      <button class="btn-primary">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+        </svg>
+        新建规则
+      </button>
+    </div>
+
+    <!-- 规则网格 -->
+    <div class="rules-grid">
+      <!-- 规则卡片 1 -->
+      <div class="rule-card">
+        <div class="rule-header">
+          <div>
+            <div class="rule-name">图片自动分类</div>
+            <div class="rule-folder">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+              </svg>
+              C:\Users\lee\Downloads
+            </div>
+          </div>
+          <button class="toggle active"></button>
+        </div>
+
+        <div class="rule-logic">
+          <div class="rule-line">
+            <span class="rule-label">如果</span>
+            <span class="rule-value">文件类型是 .png / .jpg / .jpeg</span>
+          </div>
+          <div class="rule-line">
+            <span class="rule-label">那么</span>
+            <span class="rule-value">移动到 图片\，按月份建子文件夹</span>
+          </div>
+        </div>
+
+        <div class="rule-actions">
+          <button class="action-btn primary">编辑</button>
+          <button class="action-btn">预览</button>
+          <button class="action-btn">日志</button>
+          <button class="action-btn danger">删除</button>
+        </div>
+      </div>
+
+      <!-- 规则卡片 2 -->
+      <div class="rule-card">
+        <div class="rule-header">
+          <div>
+            <div class="rule-name">文档归档</div>
+            <div class="rule-folder">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+              </svg>
+              C:\Users\lee\Downloads
+            </div>
+          </div>
+          <button class="toggle active"></button>
+        </div>
+
+        <div class="rule-logic">
+          <div class="rule-line">
+            <span class="rule-label">如果</span>
+            <span class="rule-value">文件类型是 .pdf / .docx / .xlsx</span>
+          </div>
+          <div class="rule-line">
+            <span class="rule-label">那么</span>
+            <span class="rule-value">移动到 文档\</span>
+          </div>
+        </div>
+
+        <div class="rule-actions">
+          <button class="action-btn primary">编辑</button>
+          <button class="action-btn">预览</button>
+          <button class="action-btn">日志</button>
+          <button class="action-btn danger">删除</button>
+        </div>
+      </div>
+
+      <!-- 规则卡片 3 - 停用状态 -->
+      <div class="rule-card disabled">
+        <div class="rule-header">
+          <div>
+            <div class="rule-name">安装包清理</div>
+            <div class="rule-folder">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+              </svg>
+              C:\Users\lee\Desktop
+            </div>
+          </div>
+          <button class="toggle"></button>
+        </div>
+
+        <div class="rule-logic">
+          <div class="rule-line">
+            <span class="rule-label">如果</span>
+            <span class="rule-value">文件类型是 .exe / .msi，且 30 天未修改</span>
+          </div>
+          <div class="rule-line">
+            <span class="rule-label">那么</span>
+            <span class="rule-value">移动到回收站</span>
+          </div>
+        </div>
+
+        <div class="rule-actions">
+          <button class="action-btn primary">编辑</button>
+          <button class="action-btn">预览</button>
+          <button class="action-btn">日志</button>
+          <button class="action-btn danger">删除</button>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+  // 导航切换
+  document.querySelectorAll('.nav-item').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+    });
+  });
+
+  // Toggle 开关
+  document.querySelectorAll('.toggle').forEach(toggle => {
+    toggle.addEventListener('click', () => {
+      toggle.classList.toggle('active');
+      const card = toggle.closest('.rule-card');
+      card.classList.toggle('disabled');
+    });
+  });
+
+  // 统计数字动画
+  document.querySelectorAll('.stat-value').forEach(el => {
+    const text = el.textContent;
+    el.style.opacity = '0';
+    setTimeout(() => {
+      el.style.transition = 'opacity 0.5s ease';
+      el.style.opacity = '1';
+    }, 100);
+  });
+</script>
+</body>
+</html>
