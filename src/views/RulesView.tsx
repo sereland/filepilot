@@ -59,7 +59,7 @@ export default function RulesView({ rules, onReload }: Props) {
       <div className="page-header">
         <div>
           <h2>整理规则</h2>
-          <p className="page-sub">设定条件，文件会自动归位。每条规则执行前都可预览，执行后可撤销。</p>
+          <p className="page-sub">文件自动归位 · 可预览 · 可撤销</p>
         </div>
         <button className="btn btn-primary" onClick={() => setEditing(null)}>
           <IconPlus />

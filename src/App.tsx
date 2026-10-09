@@ -1,33 +1,31 @@
 import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useState } from "react";
 import "./App.css";
-import { IconBrand, IconHistory, IconLayers } from "./components/icons";
+import { IconBrand, IconHistory, IconLayers, IconSettings } from "./components/icons";
 import { api } from "./lib/api";
 import type { OpRecord, Rule } from "./lib/types";
 import OplogView from "./views/OplogView";
 import RulesView from "./views/RulesView";
+import SettingsView from "./views/SettingsView";
 
-type Tab = "rules" | "oplog";
+type Tab = "rules" | "oplog" | "settings";
 
 function App() {
   const [tab, setTab] = useState<Tab>("rules");
   const [rules, setRules] = useState<Rule[]>([]);
   const [records, setRecords] = useState<OpRecord[]>([]);
   const [monitoring, setMonitoring] = useState(false);
-  const [autostart, setAutostart] = useState(false);
 
   const reload = useCallback(async () => {
     try {
-      const [r, o, m, a] = await Promise.all([
+      const [r, o, m] = await Promise.all([
         api.getRules(),
         api.getOplog(100),
         api.isMonitoring(),
-        api.isAutostartEnabled(),
       ]);
       setRules(r);
       setRecords(o);
       setMonitoring(m);
-      setAutostart(a);
     } catch {
       // 非 Tauri 环境（纯浏览器预览）时忽略
     }
@@ -64,14 +62,8 @@ function App() {
     }
   };
 
-  const toggleAutostart = async () => {
-    try {
-      const ok = await api.setAutostart(!autostart);
-      setAutostart(ok);
-    } catch (e) {
-      alert(`设置失败：${e}`);
-    }
-  };
+  const activeRules = rules.filter((r) => r.enabled);
+  const watchFolders = new Set(activeRules.flatMap((r) => r.watch_folders));
 
   return (
     <div className="app">
@@ -99,6 +91,13 @@ function App() {
             <IconHistory />
             操作记录
           </button>
+          <button
+            className={`nav-item ${tab === "settings" ? "active" : ""}`}
+            onClick={() => setTab("settings")}
+          >
+            <IconSettings />
+            设置
+          </button>
         </nav>
         <div className="sidebar-footer">
           <button
@@ -109,21 +108,23 @@ function App() {
             <span className="status-dot" />
             <span>
               {monitoring ? "监控中" : "已暂停"}
-              <span className="sub">{monitoring ? "规则自动运行" : "点击开启自动整理"}</span>
+              <span className="sub">
+                {monitoring
+                  ? `${activeRules.length} 条规则生效 · ${watchFolders.size} 个文件夹`
+                  : "点击开启自动整理"}
+              </span>
             </span>
           </button>
-          <label className="autostart-row">
-            <input type="checkbox" checked={autostart} onChange={toggleAutostart} />
-            <span className="small">开机自启</span>
-          </label>
           <div className="slogan">先预览 · 再动手 · 可撤销</div>
         </div>
       </aside>
       <main className="content">
         {tab === "rules" ? (
           <RulesView rules={rules} onReload={reload} />
-        ) : (
+        ) : tab === "oplog" ? (
           <OplogView records={records} onReload={reload} />
+        ) : (
+          <SettingsView />
         )}
       </main>
     </div>

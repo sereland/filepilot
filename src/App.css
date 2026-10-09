@@ -212,26 +212,37 @@ button {
   background: var(--success);
 }
 
-.autostart-row {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  cursor: pointer;
-  color: var(--muted);
-  font-size: 12px;
-  padding: 2px;
-}
-
-.autostart-row input {
-  accent-color: var(--accent);
-  cursor: pointer;
-}
-
 .slogan {
   text-align: center;
   font-size: 11px;
   color: var(--faint);
+}
+
+/* ============ 设置 ============ */
+.settings-list {
+  max-width: 760px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+}
+
+.settings-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 20px;
+}
+
+.settings-row + .settings-row {
+  border-top: 1px solid var(--border);
+}
+
+.settings-title {
+  font-size: 13px;
+  font-weight: 650;
+  margin-bottom: 2px;
 }
 
 /* ============ 主内容 ============ */
