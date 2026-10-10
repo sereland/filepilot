@@ -87,6 +87,16 @@ pub fn read_recent(log_path: &Path, limit: usize) -> Vec<OpRecord> {
     all
 }
 
+/// 每条规则最近一次实际整理时间，不受操作记录页条数限制影响。
+/// 已撤销的操作仍算执行过，撤销不会把规则变回“暂未执行”。
+pub fn rule_last_runs(log_path: &Path) -> std::collections::HashMap<String, String> {
+    let mut last_runs = std::collections::HashMap::new();
+    for record in read_all(log_path) {
+        last_runs.insert(record.rule_id, record.timestamp);
+    }
+    last_runs
+}
+
 /// 撤销最近一个未撤销的批次，返回被撤销的记录。
 /// 批次内按逆序撤销（后执行的先回滚）。
 pub fn undo_last_batch(log_path: &Path) -> std::io::Result<Vec<OpRecord>> {
@@ -330,6 +340,27 @@ mod tests {
         let p = std::env::temp_dir().join(format!("filepilot_oplog_{}.jsonl", name));
         let _ = fs::remove_file(&p);
         p
+    }
+
+    #[test]
+    fn rule_last_runs_includes_old_and_undone_records() {
+        let log = tmp_log("rule_last_runs");
+        let mut old = OpRecord::new("old", "older-rule", "旧规则", "copy".into(), "a".into(), Some("b".into()), None);
+        old.timestamp = "2026-01-01T10:00:00+08:00".into();
+        old.undone = true;
+        let mut records = vec![old];
+        for index in 0..120 {
+            let mut record = OpRecord::new("new", "recent-rule", "新规则", "copy".into(), "a".into(), Some("b".into()), None);
+            record.timestamp = format!("time-{}", index);
+            records.push(record);
+        }
+        append_records(&log, &records).unwrap();
+        assert!(read_recent(&log, 100).iter().all(|r| r.rule_id == "recent-rule"));
+        let last = rule_last_runs(&log);
+        assert_eq!(last.get("older-rule").unwrap(), "2026-01-01T10:00:00+08:00");
+        assert_eq!(last.get("recent-rule").unwrap(), "time-119");
+        assert!(!last.contains_key("never-run"));
+        let _ = fs::remove_file(&log);
     }
 
     #[test]

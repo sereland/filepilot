@@ -122,7 +122,11 @@ fn apply_rule_inner(
     state: &AppState,
     app: &AppHandle,
     id: &str,
+    selected_sources: &[String],
 ) -> Result<Vec<OpRecord>, String> {
+    if selected_sources.is_empty() {
+        return Ok(Vec::new());
+    }
     let rule = state
         .store
         .lock()
@@ -131,7 +135,7 @@ fn apply_rule_inner(
         .ok_or_else(|| "规则不存在".to_string())?;
 
     let folders: Vec<PathBuf> = rule.watch_folders.iter().map(PathBuf::from).collect();
-    let plan = engine::dry_run(&rule, &folders);
+    let plan = engine::select_plan_sources(&engine::dry_run(&rule, &folders), selected_sources);
     if plan.is_empty() {
         return Ok(Vec::new());
     }
@@ -150,8 +154,14 @@ fn apply_rule_now(
     state: State<'_, AppState>,
     app: AppHandle,
     id: String,
+    selected_sources: Vec<String>,
 ) -> Result<Vec<OpRecord>, String> {
-    apply_rule_inner(state.inner(), &app, &id)
+    apply_rule_inner(state.inner(), &app, &id, &selected_sources)
+}
+
+#[tauri::command]
+fn get_rule_last_runs(state: State<'_, AppState>) -> std::collections::HashMap<String, String> {
+    oplog::rule_last_runs(&state.oplog_path)
 }
 
 #[tauri::command]
@@ -419,6 +429,7 @@ pub fn run() {
             preview_rule,
             apply_rule_now,
             get_oplog,
+            get_rule_last_runs,
             undo_last,
             start_monitoring,
             stop_monitoring,

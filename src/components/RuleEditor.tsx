@@ -4,6 +4,7 @@ import { validateRule } from "../lib/ruleValidation";
 import { describeAction, describeCondition, newEmptyRule, type Action, type Condition, type Rule } from "../lib/types";
 import ExtensionPicker from "./ExtensionPicker";
 import Modal from "./Modal";
+import SelectField from "./SelectField";
 import Switch from "./Switch";
 import { IconFolder, IconPlus, IconX } from "./icons";
 
@@ -73,9 +74,9 @@ export default function RuleEditor({ initial, monitoring, onClose, onSaved }: {
       </section>
       <section className="editor-group"><h3>匹配条件<RequiredMark />{rule.conditions.length > 1 && <span>以下条件全部满足</span>}</h3>
         {rule.conditions.map((condition, index) => <div className="editor-row" key={index}>
-          <select aria-label={"条件类型 " + (index + 1)} value={condition.type} onChange={(e) => set({ conditions: rule.conditions.map((value, i) => i === index ? freshCondition(e.target.value as Condition["type"]) : value) })}>
+          <SelectField aria-label={"条件类型 " + (index + 1)} value={condition.type} onChange={(e) => set({ conditions: rule.conditions.map((value, i) => i === index ? freshCondition(e.target.value as Condition["type"]) : value) })}>
             <option value="extension">扩展名是</option><option value="name_contains">文件名包含</option><option value="size_greater_than">文件大小大于</option><option value="created_within_days">创建于最近</option>
-          </select>
+          </SelectField>
           <div className="condition-value"><ConditionFields condition={condition} validation={validation(`condition-${index}`)} onChange={(value) => set({ conditions: rule.conditions.map((old, i) => i === index ? value : old) })} />{feedback(`condition-${index}`)}</div>
           {rule.conditions.length > 1 && <button className="icon-btn" aria-label="删除条件" onClick={() => set({ conditions: rule.conditions.filter((_, i) => i !== index) })}><IconX /></button>}
         </div>)}
@@ -85,9 +86,9 @@ export default function RuleEditor({ initial, monitoring, onClose, onSaved }: {
       </section>
       <section className="editor-group"><h3>执行动作<RequiredMark />{rule.actions.length > 1 && <span>按以下顺序执行</span>}</h3>
         {rule.actions.map((action, index) => <div className="editor-row" key={index}>
-          <select aria-label={"动作类型 " + (index + 1)} value={action.type} onChange={(e) => set({ actions: rule.actions.map((value, i) => i === index ? freshAction(e.target.value as Action["type"]) : value) })}>
+          <SelectField aria-label={"动作类型 " + (index + 1)} value={action.type} onChange={(e) => set({ actions: rule.actions.map((value, i) => i === index ? freshAction(e.target.value as Action["type"]) : value) })}>
             <option value="move">移动到</option><option value="copy">复制到</option><option value="rename">重命名为</option><option value="move_to_recycle_bin">移入回收站</option>
-          </select>
+          </SelectField>
           <div className="condition-value"><ActionFields action={action} validation={validation(`action-${index}`)} pick={pick} onChange={(value) => set({ actions: rule.actions.map((old, i) => i === index ? value : old) })} />{feedback(`action-${index}`)}</div>
           {rule.actions.length > 1 && <button className="icon-btn" aria-label="删除动作" onClick={() => set({ actions: rule.actions.filter((_, i) => i !== index) })}><IconX /></button>}
         </div>)}

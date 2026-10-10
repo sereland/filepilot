@@ -20,6 +20,7 @@ export default function App() {
   const [tab, setTab] = useState<Tab>("rules");
   const [rules, setRules] = useState<Rule[]>([]);
   const [records, setRecords] = useState<OpRecord[]>([]);
+  const [lastRuns, setLastRuns] = useState<Record<string, string> | null>(null);
   const [monitoring, setMonitoring] = useState(false);
   const [monitorBusy, setMonitorBusy] = useState(false);
   const [monitorError, setMonitorError] = useState("");
@@ -37,8 +38,8 @@ export default function App() {
   const reload = useCallback(async () => {
     if (!isTauri()) return;
     try {
-      const [nextRules, nextRecords, running] = await Promise.all([api.getRules(), api.getOplog(100), api.isMonitoring()]);
-      setRules(nextRules); setRecords(nextRecords); setMonitoring(running);
+      const [nextRules, nextRecords, running, nextLastRuns] = await Promise.all([api.getRules(), api.getOplog(100), api.isMonitoring(), api.getRuleLastRuns()]);
+      setRules(nextRules); setRecords(nextRecords); setMonitoring(running); setLastRuns(nextLastRuns);
     } catch (e) { notify("无法加载应用数据：" + String(e), { error: true }); }
   }, [notify]);
   useEffect(() => {
@@ -88,7 +89,7 @@ export default function App() {
       </div></div>
     </aside>
     <main className={"content" + (tab === "rules" ? " content-rules" : "")}>
-      {tab === "rules" && <RulesView rules={rules} monitoring={monitoring} onReload={reload} onEdit={setEditing} onTemplates={() => setTab("templates")} onLogs={() => setTab("oplog")} notify={notify} />}
+      {tab === "rules" && <RulesView rules={rules} lastRuns={lastRuns} monitoring={monitoring} onReload={reload} onEdit={setEditing} onTemplates={() => setTab("templates")} onLogs={() => setTab("oplog")} notify={notify} />}
       {tab === "templates" && <TemplatesView onUse={setEditing} />}
       {tab === "oplog" && <OplogView records={records} onReload={reload} notify={notify} />}
       {tab === "settings" && <SettingsView notify={notify} />}

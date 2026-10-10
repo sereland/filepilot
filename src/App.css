@@ -99,6 +99,7 @@ input:hover,select:hover { border-color:var(--soft); }
 .path-token span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .path-token svg { width:13px; height:13px; }
 .card-actions { display:flex; justify-content:flex-end; align-items:center; gap:8px; }
+.rule-last-run { margin-right:auto; min-width:0; color:var(--soft); font-size:11px; }
 .more { position:relative; }
 .more > summary { display:grid; place-items:center; width:28px; height:28px; border-radius:4px; color:var(--muted); cursor:pointer; list-style:none; }
 .more > summary::-webkit-details-marker { display:none; }
@@ -144,7 +145,10 @@ input:hover,select:hover { border-color:var(--soft); }
 .editor-group h3 { font-size:13px; font-weight:600; margin:0 0 10px; }
 .editor-group h3 > span { margin-left:8px; color:var(--soft); font-size:11px; font-weight:400; }
 .editor-row { display:flex; align-items:flex-start; gap:8px; margin-top:8px; }
-.editor-row > select { width:130px; flex-shrink:0; }
+.editor-row > .native-select { width:130px; flex-shrink:0; }
+.native-select { position:relative; }
+.native-select select { appearance:none; min-height:40px; padding:9px 36px 9px 12px; }
+.native-select > svg { position:absolute; right:12px; top:50%; transform:translateY(-50%); width:14px; height:14px; color:var(--muted); pointer-events:none; }
 .condition-value { flex:1; min-width:0; }
 .field-control { flex:1; min-width:0; }
 .required-mark { color:var(--danger); margin-left:4px; }
@@ -183,6 +187,13 @@ input[aria-invalid="true"]:focus-visible,.type-select[aria-invalid="true"]:focus
 .file-table { width:100%; border-collapse:collapse; font-size:12px; text-align:left; table-layout:fixed; }
 .file-table th { padding:10px 8px; border-bottom:1px solid var(--line); background:var(--bg); color:var(--muted); font-weight:500; }
 .file-table td { padding:14px 8px; border-bottom:1px solid var(--line); vertical-align:top; overflow-wrap:anywhere; }
+.preview-table .selection-col { width:34px; }
+.preview-table .file-col { width:27%; }
+.preview-table .action-col { width:18%; }
+.preview-table input[type="checkbox"] { display:block; width:15px; height:15px; margin:2px 0; cursor:pointer; }
+.preview-table input:disabled { cursor:default; }
+.preview-table .excluded td { color:var(--soft); background:var(--bg); }
+.selection-help { margin:0 0 16px; color:var(--muted); font-size:12px; }
 .path-details { margin-top:16px; color:var(--muted); font-size:12px; overflow-wrap:anywhere; }
 .path-details summary { cursor:pointer; }
 .path-details p { font-size:11px; }
@@ -225,7 +236,9 @@ input[aria-invalid="true"]:focus-visible,.type-select[aria-invalid="true"]:focus
   .modal-body { padding:20px; }
   .modal-footer .foot-note { display:none; }
   .editor-row { flex-wrap:wrap; }
-  .editor-row > select { width:100%; }
+  .editor-row > .native-select { width:100%; }
+  .card-actions { flex-wrap:wrap; }
+  .rule-last-run { flex-basis:100%; }
   .condition-value,.path-field,.field-control { flex-basis:100%; }
 }
 @media(prefers-reduced-motion:reduce) { *,*::after { transition:none !important; } }

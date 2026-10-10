@@ -137,6 +137,20 @@ fn plan_for_action(action: &Action, meta: &FileMeta, rule_name: &str) -> Option<
     }
 }
 
+/// 仅保留预览中勾选的源文件，保留同一文件的全部动作及原顺序。
+/// 计划由后端重新扫描生成，不接受前端传入的动作或目标路径。
+/// 空名单不会执行任何文件；预览后新增的匹配文件也不会被带入。
+pub fn select_plan_sources(plan: &[PlanItem], selected_sources: &[String]) -> Vec<PlanItem> {
+    plan.iter()
+        .filter(|item| {
+            selected_sources
+                .iter()
+                .any(|src| crate::oplog::paths_equal(Path::new(src), Path::new(&item.src)))
+        })
+        .cloned()
+        .collect()
+}
+
 /// 渲染重命名模板，支持变量 {name} {ext} {date} {datetime}
 pub fn render_rename(pattern: &str, meta: &FileMeta) -> String {
     let stem = Path::new(&meta.name)
@@ -365,6 +379,72 @@ mod tests {
         assert!(dest_dir.join("a.pdf").exists());
         assert_eq!(records[0].batch_id, "batch1");
 
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn preview_selection_empty_or_unknown_never_includes_files() {
+        let item = PlanItem {
+            src: "C:/demo/a.pdf".into(),
+            action_desc: "复制".into(),
+            dest: Some("C:/backup/a.pdf".into()),
+            kind: "copy".into(),
+            rule_name: "测试".into(),
+        };
+        assert!(select_plan_sources(&[item.clone()], &[]).is_empty());
+        assert!(select_plan_sources(&[item], &["C:/demo/other.pdf".into()]).is_empty());
+    }
+
+    #[test]
+    fn preview_selection_keeps_all_actions_in_order() {
+        let copy = PlanItem {
+            src: "C:/demo/a.pdf".into(),
+            action_desc: "复制".into(),
+            dest: Some("C:/backup/a.pdf".into()),
+            kind: "copy".into(),
+            rule_name: "测试".into(),
+        };
+        let mut move_item = copy.clone();
+        move_item.kind = "move".into();
+        let mut excluded = copy.clone();
+        excluded.src = "C:/demo/b.pdf".into();
+        let selected = select_plan_sources(
+            &[copy, move_item, excluded],
+            &["C:/demo/a.pdf".into(), "C:/demo/a.pdf".into()],
+        );
+        assert_eq!(selected.len(), 2);
+        assert_eq!(selected[0].kind, "copy");
+        assert_eq!(selected[1].kind, "move");
+    }
+
+    #[test]
+    fn preview_selection_leaves_excluded_and_new_files_untouched() {
+        let dir = setup_dir("preview_selection");
+        touch(&dir, "chosen.pdf", "chosen");
+        touch(&dir, "excluded.pdf", "excluded");
+        let rule = Rule {
+            actions: vec![
+                Action::Copy { dest: dir.join("backup").to_string_lossy().to_string() },
+                Action::Move { dest: dir.join("archive").to_string_lossy().to_string() },
+            ],
+            ..pdf_rule()
+        };
+        let preview = dry_run(&rule, &[dir.clone()]);
+        assert_eq!(preview.len(), 4);
+        let selected_sources = vec![dir.join("chosen.pdf").to_string_lossy().to_string()];
+        // 预览后出现的新文件符合规则，但不在确认名单中。
+        touch(&dir, "new.pdf", "new");
+        let plan = select_plan_sources(&dry_run(&rule, &[dir.clone()]), &selected_sources);
+        let records = apply_plan(&plan, "selected-batch", "r1");
+        assert_eq!(records.len(), 2);
+        assert!(!dir.join("chosen.pdf").exists());
+        assert_eq!(fs::read_to_string(dir.join("backup/chosen.pdf")).unwrap(), "chosen");
+        assert_eq!(fs::read_to_string(dir.join("archive/chosen.pdf")).unwrap(), "chosen");
+        for name in ["excluded.pdf", "new.pdf"] {
+            assert!(dir.join(name).exists());
+            assert!(!dir.join("backup").join(name).exists());
+            assert!(!dir.join("archive").join(name).exists());
+        }
         let _ = fs::remove_dir_all(&dir);
     }
 
