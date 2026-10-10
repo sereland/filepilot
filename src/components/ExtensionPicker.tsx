@@ -10,12 +10,12 @@ const GROUPS = [
 ];
 const normalize = (values: string[]) => [...new Set(values.map((value) => value.trim().replace(/^\.+/, "").toLowerCase()).filter(Boolean))];
 
-export default function ExtensionPicker({ values, onChange }: { values: string[]; onChange: (values: string[]) => void }) {
+export default function ExtensionPicker({ values, onChange, validation }: { values: string[]; onChange: (values: string[]) => void; validation?: { "aria-invalid"?: boolean; "aria-describedby"?: string } }) {
   const [open, setOpen] = useState(false);
   const selected = normalize(values);
   const label = selected.length ? selected.slice(0, 3).map((ext) => `.${ext}`).join("、") + (selected.length > 3 ? ` 等 ${selected.length} 种` : "") : "选择文件类型";
   return <>
-    <button type="button" className="type-select" aria-haspopup="dialog" onClick={() => setOpen(true)} title={selected.map((ext) => `.${ext}`).join("、")}>
+    <button type="button" className="type-select" aria-haspopup="dialog" {...validation} onClick={() => setOpen(true)} title={selected.map((ext) => `.${ext}`).join("、")}>
       <span className={selected.length ? "type-value" : "type-value placeholder"}>{label}</span><IconChevron />
     </button>
     {open && <PickerDialog initial={selected} onClose={() => setOpen(false)} onConfirm={(next) => { onChange(next); setOpen(false); }} />}

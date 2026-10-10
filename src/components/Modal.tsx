@@ -9,9 +9,10 @@ interface Props {
   onClose: () => void;
   busy?: boolean;
   compact?: boolean;
+  closeOnBackdrop?: boolean;
 }
 
-export default function Modal({ title, description, children, footer, onClose, busy, compact }: Props) {
+export default function Modal({ title, description, children, footer, onClose, busy, compact, closeOnBackdrop = true }: Props) {
   const ref = useRef<HTMLDialogElement>(null);
   const titleId = useId();
   useEffect(() => {
@@ -29,7 +30,7 @@ export default function Modal({ title, description, children, footer, onClose, b
       onCancel={(e) => { e.preventDefault(); if (!busy) onClose(); }}
       onClick={(e) => {
         const rect = e.currentTarget.getBoundingClientRect();
-        if (!busy && e.target === e.currentTarget && (e.clientX < rect.left || e.clientX > rect.right || e.clientY < rect.top || e.clientY > rect.bottom)) onClose();
+        if (closeOnBackdrop && !busy && e.target === e.currentTarget && (e.clientX < rect.left || e.clientX > rect.right || e.clientY < rect.top || e.clientY > rect.bottom)) onClose();
       }}>
       <div className="modal-header"><div><h2 id={titleId}>{title}</h2>{description && <p>{description}</p>}</div>
         <button type="button" className="icon-btn" aria-label="关闭" disabled={busy} onClick={onClose}><IconX /></button>

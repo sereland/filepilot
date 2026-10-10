@@ -87,7 +87,7 @@ export default function App() {
         <button className="btn btn-secondary monitor-button" disabled={monitorBusy || (!monitoring && !active)} onClick={toggleMonitoring}>{monitorBusy ? "处理中…" : monitoring ? "暂停自动整理" : "恢复自动整理"}</button>
       </div></div>
     </aside>
-    <main className="content">
+    <main className={"content" + (tab === "rules" ? " content-rules" : "")}>
       {tab === "rules" && <RulesView rules={rules} monitoring={monitoring} onReload={reload} onEdit={setEditing} onTemplates={() => setTab("templates")} onLogs={() => setTab("oplog")} notify={notify} />}
       {tab === "templates" && <TemplatesView onUse={setEditing} />}
       {tab === "oplog" && <OplogView records={records} onReload={reload} notify={notify} />}

@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useId, useRef, useState } from "react";
 import { api } from "../lib/api";
+import { validateRule } from "../lib/ruleValidation";
 import { describeAction, describeCondition, newEmptyRule, type Action, type Condition, type Rule } from "../lib/types";
 import ExtensionPicker from "./ExtensionPicker";
 import Modal from "./Modal";
@@ -24,26 +25,29 @@ export default function RuleEditor({ initial, monitoring, onClose, onSaved }: {
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [submitted, setSubmitted] = useState(false);
+  const fieldsRef = useRef<HTMLFieldSetElement>(null);
+  const errorId = useId();
+  const errors = submitted ? validateRule(rule) : {};
+  const validation = (key: string): FieldValidation => ({ "aria-invalid": errors[key] ? true : undefined, "aria-describedby": errors[key] ? `${errorId}-${key}` : undefined });
+  const feedback = (key: string) => errors[key] && <p className="field-error" id={`${errorId}-${key}`}>{errors[key]}</p>;
   const set = (patch: Partial<Rule>) => setRule((current) => ({ ...current, ...patch }));
   const pick = async (update: (folder: string) => void) => {
     try { const folder = await api.pickFolder(); if (folder) update(folder); }
     catch (e) { setError("无法选择文件夹：" + String(e)); }
   };
   const save = async () => {
+    setSubmitted(true);
+    setError("");
+    if (Object.keys(validateRule(rule)).length) {
+      requestAnimationFrame(() => {
+        const first = fieldsRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]');
+        first?.focus({ preventScroll: true });
+        first?.scrollIntoView({ block: "center", behavior: "instant" });
+      });
+      return;
+    }
     const folders = [...new Set(rule.watch_folders.map((folder) => folder.trim()).filter(Boolean))];
-    if (!rule.name.trim()) return setError("请给规则起个名字。");
-    if (!folders.length) return setError("请至少选择一个来源文件夹。");
-    if (!rule.conditions.length || !rule.actions.length) return setError("请至少添加一个匹配条件和一个执行动作。");
-    for (const condition of rule.conditions) {
-      if (condition.type === "extension" && !condition.exts.length) return setError("请至少选择一种扩展名。");
-      if (condition.type === "name_contains" && !condition.keyword.trim()) return setError("请输入文件名关键词。");
-      if (condition.type === "size_greater_than" && (!Number.isFinite(condition.bytes) || condition.bytes <= 0)) return setError("文件大小必须大于 0。");
-      if (condition.type === "created_within_days" && (!Number.isInteger(condition.days) || condition.days < 1)) return setError("创建天数必须为正整数。");
-    }
-    for (const action of rule.actions) {
-      if ((action.type === "move" || action.type === "copy") && !action.dest.trim()) return setError("请选择目标文件夹。");
-      if (action.type === "rename" && !action.pattern.trim()) return setError("请输入重命名格式。");
-    }
     setError(""); setSaving(true);
     try {
       const saved = await api.saveRule({ ...rule, name: rule.name.trim(), watch_folders: folders,
@@ -53,38 +57,41 @@ export default function RuleEditor({ initial, monitoring, onClose, onSaved }: {
     } catch (e) { setError("保存失败：" + String(e)); }
     finally { setSaving(false); }
   };
-  return <Modal title={initial?.id ? "编辑规则" : "新建规则"} description="选择文件夹，定义条件，再指定文件去向。" onClose={onClose} busy={saving}
+  return <Modal title={initial?.id ? "编辑规则" : "新建规则"} description="选择文件夹，定义条件，再指定文件去向。标 * 的项目为必填。" onClose={onClose} busy={saving} closeOnBackdrop={false}
     footer={<><span className="foot-note">保存后可先预览整理效果</span><button className="btn btn-secondary" onClick={onClose} disabled={saving}>取消</button><button className="btn btn-primary" onClick={save} disabled={saving}>{saving ? "保存中…" : "保存规则"}</button></>}>
-    <fieldset className="editor-fields" disabled={saving}>
-      <label className="field"><span>规则名称</span><input autoFocus value={rule.name} onChange={(e) => set({ name: e.target.value })} placeholder="例如：图片自动归档" maxLength={80} /></label>
-      <section className="editor-group"><h3>来源文件夹</h3>
+    {Object.keys(errors).length > 0 && <p className="validation-summary" role="alert">还有 {Object.keys(errors).length} 处需要补充或修改，请检查红框标出的项目。</p>}
+    <fieldset ref={fieldsRef} className="editor-fields" disabled={saving}>
+      <div className="field-control"><label className="field"><span>规则名称<RequiredMark /></span><input autoFocus aria-required="true" {...validation("name")} value={rule.name} onChange={(e) => set({ name: e.target.value })} placeholder="例如：图片自动归档" maxLength={80} /></label>{feedback("name")}</div>
+      <section className="editor-group"><h3>来源文件夹<RequiredMark /></h3>
         {rule.watch_folders.map((folder, index) => <div className="editor-row" key={index}>
-          <div className="path-field"><input aria-label={"来源文件夹 " + (index + 1)} value={folder} placeholder="选择或粘贴文件夹路径" onChange={(e) => set({ watch_folders: rule.watch_folders.map((value, i) => i === index ? e.target.value : value) })} />
+          <div className="field-control"><div className="path-field"><input aria-label={"来源文件夹 " + (index + 1)} aria-required="true" {...validation(`source-${index}`)} value={folder} placeholder="选择或粘贴文件夹路径" onChange={(e) => set({ watch_folders: rule.watch_folders.map((value, i) => i === index ? e.target.value : value) })} />
             <button type="button" className="btn btn-secondary" onClick={() => pick((value) => set({ watch_folders: rule.watch_folders.map((old, i) => i === index ? value : old) }))}><IconFolder />选择文件夹</button>
-          </div>
+          </div>{feedback(`source-${index}`)}</div>
           {rule.watch_folders.length > 1 && <button className="icon-btn" aria-label="移除来源文件夹" onClick={() => set({ watch_folders: rule.watch_folders.filter((_, i) => i !== index) })}><IconX /></button>}
         </div>)}
         <button className="text-btn add-control" onClick={() => set({ watch_folders: [...rule.watch_folders, ""] })}><IconPlus />添加来源文件夹</button>
       </section>
-      <section className="editor-group"><h3>匹配条件{rule.conditions.length > 1 && <span>以下条件全部满足</span>}</h3>
+      <section className="editor-group"><h3>匹配条件<RequiredMark />{rule.conditions.length > 1 && <span>以下条件全部满足</span>}</h3>
         {rule.conditions.map((condition, index) => <div className="editor-row" key={index}>
           <select aria-label={"条件类型 " + (index + 1)} value={condition.type} onChange={(e) => set({ conditions: rule.conditions.map((value, i) => i === index ? freshCondition(e.target.value as Condition["type"]) : value) })}>
             <option value="extension">扩展名是</option><option value="name_contains">文件名包含</option><option value="size_greater_than">文件大小大于</option><option value="created_within_days">创建于最近</option>
           </select>
-          <div className="condition-value"><ConditionFields condition={condition} onChange={(value) => set({ conditions: rule.conditions.map((old, i) => i === index ? value : old) })} /></div>
+          <div className="condition-value"><ConditionFields condition={condition} validation={validation(`condition-${index}`)} onChange={(value) => set({ conditions: rule.conditions.map((old, i) => i === index ? value : old) })} />{feedback(`condition-${index}`)}</div>
           {rule.conditions.length > 1 && <button className="icon-btn" aria-label="删除条件" onClick={() => set({ conditions: rule.conditions.filter((_, i) => i !== index) })}><IconX /></button>}
         </div>)}
+        {feedback("conditions")}
         {rule.conditions.some((condition) => condition.type === "extension") && <p className="editor-help">同一扩展名条件中，选中的任一种扩展名都匹配。</p>}
         <button className="text-btn add-control" onClick={() => set({ conditions: [...rule.conditions, freshCondition("extension")] })}><IconPlus />添加条件</button>
       </section>
-      <section className="editor-group"><h3>执行动作{rule.actions.length > 1 && <span>按以下顺序执行</span>}</h3>
+      <section className="editor-group"><h3>执行动作<RequiredMark />{rule.actions.length > 1 && <span>按以下顺序执行</span>}</h3>
         {rule.actions.map((action, index) => <div className="editor-row" key={index}>
           <select aria-label={"动作类型 " + (index + 1)} value={action.type} onChange={(e) => set({ actions: rule.actions.map((value, i) => i === index ? freshAction(e.target.value as Action["type"]) : value) })}>
             <option value="move">移动到</option><option value="copy">复制到</option><option value="rename">重命名为</option><option value="move_to_recycle_bin">移入回收站</option>
           </select>
-          <div className="condition-value"><ActionFields action={action} pick={pick} onChange={(value) => set({ actions: rule.actions.map((old, i) => i === index ? value : old) })} /></div>
+          <div className="condition-value"><ActionFields action={action} validation={validation(`action-${index}`)} pick={pick} onChange={(value) => set({ actions: rule.actions.map((old, i) => i === index ? value : old) })} />{feedback(`action-${index}`)}</div>
           {rule.actions.length > 1 && <button className="icon-btn" aria-label="删除动作" onClick={() => set({ actions: rule.actions.filter((_, i) => i !== index) })}><IconX /></button>}
         </div>)}
+        {feedback("actions")}
         <button className="text-btn add-control" onClick={() => set({ actions: [...rule.actions, freshAction("move")] })}><IconPlus />添加动作</button>
         {rule.actions.some((action) => action.type === "rename") && <p className="editor-help">支持 {"{name}"} 原文件名、{"{ext}"} 扩展名、{"{date}"} 日期、{"{datetime}"} 日期时间。</p>}
       </section>
@@ -95,16 +102,18 @@ export default function RuleEditor({ initial, monitoring, onClose, onSaved }: {
   </Modal>;
 }
 
-function ConditionFields({ condition, onChange }: { condition: Condition; onChange: (condition: Condition) => void }) {
+type FieldValidation = { "aria-invalid"?: boolean; "aria-describedby"?: string };
+function RequiredMark() { return <b className="required-mark" aria-hidden="true">*</b>; }
+function ConditionFields({ condition, onChange, validation }: { condition: Condition; onChange: (condition: Condition) => void; validation: FieldValidation }) {
   switch (condition.type) {
-    case "extension": return <ExtensionPicker values={condition.exts} onChange={(exts) => onChange({ ...condition, exts })} />;
-    case "name_contains": return <input aria-label="文件名关键词" value={condition.keyword} onChange={(e) => onChange({ ...condition, keyword: e.target.value })} placeholder="例如：发票" />;
-    case "size_greater_than": return <div className="inline-fields"><input aria-label="文件大小（MB）" type="number" min={1} value={condition.bytes / 1024 / 1024} onChange={(e) => onChange({ ...condition, bytes: Math.round(Number(e.target.value) * 1024 * 1024) })} /><span>MB</span></div>;
-    case "created_within_days": return <div className="inline-fields"><input aria-label="最近创建天数" type="number" min={1} step={1} value={condition.days} onChange={(e) => onChange({ ...condition, days: Number(e.target.value) })} /><span>天</span></div>;
+    case "extension": return <ExtensionPicker values={condition.exts} validation={validation} onChange={(exts) => onChange({ ...condition, exts })} />;
+    case "name_contains": return <input aria-label="文件名关键词" aria-required="true" {...validation} value={condition.keyword} onChange={(e) => onChange({ ...condition, keyword: e.target.value })} placeholder="例如：发票" />;
+    case "size_greater_than": return <div className="inline-fields"><input aria-label="文件大小（MB）" aria-required="true" {...validation} type="number" min={0} step="any" value={condition.bytes / 1024 / 1024} onChange={(e) => onChange({ ...condition, bytes: Math.round(Number(e.target.value) * 1024 * 1024) })} /><span>MB</span></div>;
+    case "created_within_days": return <div className="inline-fields"><input aria-label="最近创建天数" aria-required="true" {...validation} type="number" min={1} step={1} value={condition.days} onChange={(e) => onChange({ ...condition, days: Number(e.target.value) })} /><span>天</span></div>;
   }
 }
-function ActionFields({ action, onChange, pick }: { action: Action; onChange: (action: Action) => void; pick: (update: (folder: string) => void) => Promise<void> }) {
-  if (action.type === "move" || action.type === "copy") return <div className="path-field"><input aria-label="目标文件夹" value={action.dest} onChange={(e) => onChange({ ...action, dest: e.target.value })} placeholder="选择或粘贴目标路径" /><button className="btn btn-secondary" onClick={() => pick((dest) => onChange({ ...action, dest }))}><IconFolder />选择文件夹</button></div>;
-  if (action.type === "rename") return <input aria-label="重命名格式" value={action.pattern} onChange={(e) => onChange({ ...action, pattern: e.target.value })} placeholder="{name}_{date}.{ext}" />;
+function ActionFields({ action, onChange, pick, validation }: { action: Action; onChange: (action: Action) => void; pick: (update: (folder: string) => void) => Promise<void>; validation: FieldValidation }) {
+  if (action.type === "move" || action.type === "copy") return <div className="path-field"><input aria-label="目标文件夹" aria-required="true" {...validation} value={action.dest} onChange={(e) => onChange({ ...action, dest: e.target.value })} placeholder="选择或粘贴目标路径" /><button className="btn btn-secondary" onClick={() => pick((dest) => onChange({ ...action, dest }))}><IconFolder />选择文件夹</button></div>;
+  if (action.type === "rename") return <input aria-label="重命名格式" aria-required="true" {...validation} value={action.pattern} onChange={(e) => onChange({ ...action, pattern: e.target.value })} placeholder="{name}_{date}.{ext}" />;
   return <span className="muted small">文件进入系统回收站，可在回收站恢复。</span>;
 }

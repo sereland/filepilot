@@ -40,12 +40,13 @@ export default function RulesView({ rules, monitoring, onReload, onEdit, onTempl
     } catch (e) { setPreviewError("整理失败：" + String(e)); }
     finally { setRunning(false); }
   };
-  return <div>
+  return <div className="rules-page">
     <header className="page-header"><div><h1>整理规则</h1><p className="page-sub">按条件匹配文件，整理到指定位置。</p></div><button className="btn btn-primary" onClick={() => onEdit(null)}><IconPlus />新建规则</button></header>
     <div className="toolbar"><div className="filters" role="group" aria-label="规则筛选">
       {([{ key: "all", label: "全部", count: rules.length }, { key: "auto", label: "自动整理", count: active }, { key: "manual", label: "仅手动", count: rules.length - active }] as const).map((item) => <button key={item.key} className={"filter" + (filter === item.key ? " active" : "")} aria-pressed={filter === item.key} onClick={() => setFilter(item.key)}>{item.label}<span>{item.count}</span></button>)}
     </div><label className="search"><IconSearch /><input aria-label="搜索规则或文件夹" placeholder="搜索规则或文件夹" value={query} onChange={(e) => setQuery(e.target.value)} /></label></div>
     {!monitoring && active > 0 && <div className="pause-notice">自动整理已暂停。自动规则的配置会保留，仍可手动预览和执行。</div>}
+    <div className="rules-scroll" role="region" aria-label="规则列表" tabIndex={0}>
     {visible.length === 0 ? <div className="empty"><IconInbox /><h2>{rules.length ? "没有符合条件的规则" : "从第一条规则开始"}</h2><p>{rules.length ? "试试其他关键词或筛选条件。" : "选择一个常用模板，先预览，再整理。"}</p><button className="btn btn-secondary" onClick={() => { if (!rules.length) onTemplates(); else { setQuery(""); setFilter("all"); } }}>{rules.length ? "清除筛选" : "浏览规则模板"}</button></div> :
       <div className="rule-grid">{visible.map((rule) => <article className="rule-card" key={rule.id}>
         <div className="card-row"><div className="rule-heading"><h2 className="rule-name" title={rule.name}>{rule.name}</h2><span className={"rule-status" + (rule.enabled && monitoring ? " auto" : "")}>{rule.enabled ? monitoring ? "自动整理" : "自动整理 · 已暂停" : "仅手动"}</span></div>
@@ -63,6 +64,7 @@ export default function RulesView({ rules, monitoring, onReload, onEdit, onTempl
           </div></details>
         </div>
       </article>)}</div>}
+    </div>
     {preview && <PreviewDialog ruleName={preview.rule.name} items={preview.items} running={running} error={previewError} onConfirm={() => { void apply(); }} onClose={() => { if (!running) setPreview(null); }} />}
     {deleting && <Modal compact title="删除这条规则？" onClose={() => setDeleting(null)} busy={!!pending} footer={<><button className="btn btn-secondary" disabled={!!pending} onClick={() => setDeleting(null)}>取消</button><button className="btn btn-danger" disabled={!!pending} onClick={() => { void perform(deleting.id, async () => { if (!await api.deleteRule(deleting.id)) throw new Error("规则不存在。"); setDeleting(null); await onReload(); notify("规则已删除。"); }); }}>{pending ? "删除中…" : "删除规则"}</button></>}><p>将删除「{deleting.name}」。</p><p className="muted">已整理的文件和操作记录会保留。</p>{deleteError && <p className="error" role="alert">{deleteError}</p>}</Modal>}
   </div>;
