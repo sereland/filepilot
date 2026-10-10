@@ -44,10 +44,14 @@ FilePilot is a free, Chinese-first, modern automatic file organizer for Windows.
 
 ## 开发 / Development
 
+界面定稿见 [设计规范](design/UI_FINAL.md)，独立预览见 [最终 HTML 预览](design/preview-final.html)。主窗口默认 1120 × 700，采用侧栏导航、单列规则、独立模板页和文件类型多选。新规则默认仅手动，自动整理可按规则开启。
+
 ```bash
 npm install
 npm run tauri dev        # 需要 Rust 工具链 + 系统依赖
 ```
+
+仅检查前端可运行 `npm run build`。普通浏览器可查看页面和编辑器，真实文件操作、文件夹选择和监控需在 Tauri 桌面应用中使用。
 
 Windows 安装包由 GitHub Actions 自动构建（见 `.github/workflows/build.yml`），每次打 tag 自动发布到 Releases。
 

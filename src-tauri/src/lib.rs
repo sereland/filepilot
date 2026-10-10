@@ -81,18 +81,28 @@ fn get_rules(state: State<'_, AppState>) -> Vec<Rule> {
 }
 
 #[tauri::command]
-fn save_rule(state: State<'_, AppState>, rule: Rule) -> Rule {
-    state.store.lock().unwrap().upsert(rule)
+fn save_rule(state: State<'_, AppState>, app: AppHandle, rule: Rule) -> Rule {
+    let saved = state.store.lock().unwrap().upsert(rule);
+    refresh_monitoring(state.inner(), &app);
+    saved
 }
 
 #[tauri::command]
-fn delete_rule(state: State<'_, AppState>, id: String) -> bool {
-    state.store.lock().unwrap().delete(&id)
+fn delete_rule(state: State<'_, AppState>, app: AppHandle, id: String) -> bool {
+    let changed = state.store.lock().unwrap().delete(&id);
+    if changed {
+        refresh_monitoring(state.inner(), &app);
+    }
+    changed
 }
 
 #[tauri::command]
-fn set_rule_enabled(state: State<'_, AppState>, id: String, enabled: bool) -> bool {
-    state.store.lock().unwrap().set_enabled(&id, enabled)
+fn set_rule_enabled(state: State<'_, AppState>, app: AppHandle, id: String, enabled: bool) -> bool {
+    let changed = state.store.lock().unwrap().set_enabled(&id, enabled);
+    if changed {
+        refresh_monitoring(state.inner(), &app);
+    }
+    changed
 }
 
 // ---------- 执行 ----------
@@ -173,6 +183,16 @@ fn undo_last(state: State<'_, AppState>, app: AppHandle) -> Result<usize, String
 }
 
 // ---------- 监控 ----------
+
+/// 仅在全局监控运行时重新注册来源文件夹；暂停期间保留单规则配置。
+/// 调用方必须先释放 store 锁，避免等待监控线程退出时阻塞其回调。
+fn refresh_monitoring(state: &AppState, app: &AppHandle) {
+    let running = *state.monitoring.lock().unwrap();
+    if running {
+        let running = start_monitoring_inner(state, app);
+        let _ = app.emit("fp://monitoring-changed", running);
+    }
+}
 
 /// 收集所有启用规则引用的文件夹（去重）
 fn watched_folders(state: &AppState) -> Vec<PathBuf> {

@@ -110,6 +110,25 @@ export const IconSettings = (p: SVGProps<SVGSVGElement>) => (
 );
 
 /** 品牌 mark：纸飞机 */
+export const IconTemplate = (p: SVGProps<SVGSVGElement>) => (
+  <Svg {...p}><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M3 9h18M10 9v12" /></Svg>
+);
+export const IconSearch = (p: SVGProps<SVGSVGElement>) => (
+  <Svg {...p}><circle cx="10" cy="10" r="6" /><path d="m15 15 5 5" /></Svg>
+);
+export const IconMore = (p: SVGProps<SVGSVGElement>) => (
+  <Svg {...p}><circle cx="5" cy="12" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="19" cy="12" r="1" /></Svg>
+);
+export const IconChevron = (p: SVGProps<SVGSVGElement>) => (
+  <Svg {...p}><path d="m6 9 6 6 6-6" /></Svg>
+);
+export const IconFile = (p: SVGProps<SVGSVGElement>) => (
+  <Svg {...p}><path d="M14 3H5v18h14V8l-5-5ZM14 3v5h5M8 12h8M8 16h6" /></Svg>
+);
+export const IconImage = (p: SVGProps<SVGSVGElement>) => (
+  <Svg {...p}><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="8" cy="8" r="1.5" /><path d="m3 17 5-5 4 4 4-6 5 7" /></Svg>
+);
+
 export const IconBrand = (p: SVGProps<SVGSVGElement>) => (
   <Svg {...p}>
     <path d="M22 2 11 13" />

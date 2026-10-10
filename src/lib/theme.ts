@@ -56,12 +56,8 @@ export function initTheme() {
   const effectiveTheme = getEffectiveTheme(userTheme);
   applyTheme(effectiveTheme);
 
-  // 如果是 auto 模式，监听系统主题变化
-  if (userTheme === 'auto') {
-    return watchSystemTheme((systemTheme) => {
-      applyTheme(systemTheme);
-    });
-  }
-
-  return undefined;
+  // 当前选择可能在设置页改变，事件到来时读取最新偏好。
+  return watchSystemTheme((systemTheme) => {
+    if (loadTheme() === 'auto') applyTheme(systemTheme);
+  });
 }

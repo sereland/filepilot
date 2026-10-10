@@ -100,7 +100,7 @@ export function newEmptyRule(): Rule {
   return {
     id: "",
     name: "",
-    enabled: true,
+    enabled: false,
     watch_folders: [],
     conditions: [],
     actions: [],
