@@ -4,13 +4,13 @@ import PreviewDialog from "../components/PreviewDialog";
 import Switch from "../components/Switch";
 import { IconEye, IconFolder, IconInbox, IconMore, IconPlus, IconSearch } from "../components/icons";
 import { api } from "../lib/api";
-import { describeAction, describeCondition, type PlanItem, type Rule } from "../lib/types";
+import { describeAction, describeCondition, type PlanItem, type Rule, type RuleLastRun } from "../lib/types";
 import { formatLastRun, uniqueFileCount, type Notify } from "../lib/ui";
 
 interface Props {
   rules: Rule[]; monitoring: boolean; onReload: () => Promise<void>; onEdit: (rule: Rule | null) => void;
-  lastRuns: Record<string, string> | null;
-  onTemplates: () => void; onLogs: () => void; notify: Notify;
+  lastRuns: Record<string, RuleLastRun> | null;
+  onTemplates: () => void; onLogs: (batchId?: string) => void; notify: Notify;
 }
 export default function RulesView({ rules, lastRuns, monitoring, onReload, onEdit, onTemplates, onLogs, notify }: Props) {
   const [filter, setFilter] = useState<"all" | "auto" | "manual">("all");
@@ -61,7 +61,7 @@ export default function RulesView({ rules, lastRuns, monitoring, onReload, onEdi
         <div className="rule-folder"><IconFolder /><span title={rule.watch_folders.join("\n")}>{rule.watch_folders.join("、") || "未设置来源文件夹"}</span></div>
         <dl className="rule-logic"><dt>如果</dt><dd>{rule.conditions.map((condition, index) => <span key={index}>{index > 0 && " 且 "}{condition.type === "extension" ? <>扩展名是 {condition.exts.map((ext) => <span key={ext} className="extension">.{ext.replace(/^\./, "")}</span>)}</> : describeCondition(condition)}</span>)}</dd>
           <dt>那么</dt><dd>{rule.actions.map((action, index) => <span key={index}>{index > 0 && "；"}{action.type === "move" || action.type === "copy" ? <>{action.type === "move" ? "移动到 " : "复制到 "}<span className="path-token" title={action.dest}><IconFolder /><span>{action.dest}</span></span></> : describeAction(action)}</span>)}</dd></dl>
-        <div className="card-actions"><span className="rule-last-run" title={lastRuns?.[rule.id]}>{lastRuns === null ? "执行状态未加载" : lastRuns[rule.id] ? formatLastRun(lastRuns[rule.id]) : "暂未执行"}</span><button className="btn btn-secondary btn-small" disabled={!!pending} onClick={() => { void doPreview(rule); }}><IconEye />{pending === rule.id ? "处理中…" : "预览整理"}</button><button className="text-btn" onClick={() => onEdit(rule)} disabled={!!pending}>编辑</button>
+        <div className="card-actions">{lastRuns?.[rule.id] ? <button className="rule-last-run run-link" title="查看这批整理的操作记录" onClick={() => onLogs(lastRuns[rule.id].batch_id)}>{formatLastRun(lastRuns[rule.id].timestamp)} · {lastRuns[rule.id].file_count} 个文件</button> : <span className="rule-last-run">{lastRuns === null ? "执行状态未加载" : "暂未执行"}</span>}<button className="btn btn-secondary btn-small" disabled={!!pending} onClick={() => { void doPreview(rule); }}><IconEye />{pending === rule.id ? "处理中…" : "预览整理"}</button><button className="text-btn" onClick={() => onEdit(rule)} disabled={!!pending}>编辑</button>
           <details className="more" onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) e.currentTarget.open = false; }} onKeyDown={(e) => { if (e.key === "Escape") { e.currentTarget.open = false; e.currentTarget.querySelector("summary")?.focus(); } }}><summary aria-label={rule.name + "的更多操作"}><IconMore /></summary><div className="menu">
             <button disabled={!!pending} onClick={(e) => { e.currentTarget.closest("details")!.open = false; void perform(rule.id, async () => { await api.saveRule({ ...rule, id: "", name: rule.name + "（副本）", enabled: false }); await onReload(); notify("已复制规则，副本默认仅手动。"); }); }}>复制规则</button>
             <button className="danger" disabled={!!pending} onClick={(e) => { e.currentTarget.closest("details")!.open = false; setDeleteError(""); setDeleting(rule); }}>删除规则</button>

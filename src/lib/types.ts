@@ -41,6 +41,12 @@ export interface OpRecord {
   undone: boolean;
 }
 
+export interface RuleLastRun {
+  batch_id: string;
+  timestamp: string;
+  file_count: number;
+}
+
 export const CONDITION_LABELS: Record<Condition["type"], string> = {
   extension: "扩展名",
   name_contains: "文件名包含",

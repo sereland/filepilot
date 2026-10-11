@@ -87,14 +87,40 @@ pub fn read_recent(log_path: &Path, limit: usize) -> Vec<OpRecord> {
     all
 }
 
-/// 每条规则最近一次实际整理时间，不受操作记录页条数限制影响。
+#[derive(Serialize, Clone, Debug)]
+pub struct RuleLastRun {
+    pub batch_id: String,
+    pub timestamp: String,
+    pub file_count: usize,
+}
+
+/// 每条规则最近一次实际整理的批次、时间和文件数，不受记录页条数限制影响。
 /// 已撤销的操作仍算执行过，撤销不会把规则变回“暂未执行”。
-pub fn rule_last_runs(log_path: &Path) -> std::collections::HashMap<String, String> {
+pub fn rule_last_runs(log_path: &Path) -> std::collections::HashMap<String, RuleLastRun> {
+    let records = read_all(log_path);
     let mut last_runs = std::collections::HashMap::new();
-    for record in read_all(log_path) {
-        last_runs.insert(record.rule_id, record.timestamp);
+    for record in &records {
+        last_runs.insert(record.rule_id.clone(), RuleLastRun {
+            batch_id: record.batch_id.clone(),
+            timestamp: record.timestamp.clone(),
+            file_count: 0,
+        });
+    }
+    let mut sources: std::collections::HashMap<String, std::collections::HashSet<String>> = std::collections::HashMap::new();
+    for record in &records {
+        if last_runs.get(&record.rule_id).map(|run| run.batch_id == record.batch_id).unwrap_or(false) {
+            sources.entry(record.rule_id.clone()).or_default().insert(normalize_path(Path::new(&record.src)));
+        }
+    }
+    for (rule_id, run) in &mut last_runs {
+        run.file_count = sources.get(rule_id).map(|files| files.len()).unwrap_or(0);
     }
     last_runs
+}
+
+/// 按批次取完整记录，用于从规则卡片定位，不受最近 N 项限制。
+pub fn read_batch(log_path: &Path, batch_id: &str) -> Vec<OpRecord> {
+    read_all(log_path).into_iter().rev().filter(|record| record.batch_id == batch_id).collect()
 }
 
 /// 撤销最近一个未撤销的批次，返回被撤销的记录。
@@ -357,9 +383,48 @@ mod tests {
         append_records(&log, &records).unwrap();
         assert!(read_recent(&log, 100).iter().all(|r| r.rule_id == "recent-rule"));
         let last = rule_last_runs(&log);
-        assert_eq!(last.get("older-rule").unwrap(), "2026-01-01T10:00:00+08:00");
-        assert_eq!(last.get("recent-rule").unwrap(), "time-119");
+        assert_eq!(last.get("older-rule").unwrap().timestamp, "2026-01-01T10:00:00+08:00");
+        assert_eq!(last.get("older-rule").unwrap().file_count, 1);
+        assert_eq!(last.get("recent-rule").unwrap().timestamp, "time-119");
+        let old_batch = read_batch(&log, "old");
+        assert_eq!(old_batch.len(), 1);
+        assert_eq!(old_batch[0].rule_id, "older-rule");
         assert!(!last.contains_key("never-run"));
+        let _ = fs::remove_file(&log);
+    }
+
+    #[test]
+    fn rule_last_runs_counts_unique_sources_in_latest_batch() {
+        let log = tmp_log("rule_last_runs_count");
+        let old = OpRecord::new("old", "r1", "图片归档", "move".into(), "old.png".into(), Some("archive/old.png".into()), None);
+        let mut records = vec![old];
+        for index in 0..12 {
+            let src = format!("C:/Demo/{}.png", index);
+            for kind in ["copy", "move"] {
+                let mut record = OpRecord::new("latest", "r1", "图片归档", kind.into(), if kind == "copy" { src.clone() } else { src.replace('/', "\\") }, Some(format!("archive/{}.png", index)), None);
+                record.timestamp = "2026-10-11T10:42:00+08:00".into();
+                record.undone = true;
+                records.push(record);
+            }
+        }
+        append_records(&log, &records).unwrap();
+        let last = rule_last_runs(&log);
+        let run = last.get("r1").unwrap();
+        assert_eq!(run.batch_id, "latest");
+        assert_eq!(run.file_count, 12);
+        assert_eq!(read_batch(&log, "latest").len(), 24);
+        assert!(read_batch(&log, "missing").is_empty());
+        let _ = fs::remove_file(&log);
+    }
+
+    #[test]
+    fn rule_last_runs_batch_lookup_is_complete_beyond_recent_limit() {
+        let log = tmp_log("rule_last_runs_full_batch");
+        let records: Vec<_> = (0..240).map(|index| OpRecord::new("large-batch", "r1", "图片归档", "copy".into(), format!("{}.png", index), Some(format!("out/{}.png", index)), None)).collect();
+        append_records(&log, &records).unwrap();
+        assert_eq!(read_recent(&log, 100).len(), 100);
+        assert_eq!(read_batch(&log, "large-batch").len(), 240);
+        assert_eq!(rule_last_runs(&log).get("r1").unwrap().file_count, 240);
         let _ = fs::remove_file(&log);
     }
 

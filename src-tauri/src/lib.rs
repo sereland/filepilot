@@ -160,13 +160,18 @@ fn apply_rule_now(
 }
 
 #[tauri::command]
-fn get_rule_last_runs(state: State<'_, AppState>) -> std::collections::HashMap<String, String> {
+fn get_rule_last_runs(state: State<'_, AppState>) -> std::collections::HashMap<String, oplog::RuleLastRun> {
     oplog::rule_last_runs(&state.oplog_path)
 }
 
 #[tauri::command]
 fn get_oplog(state: State<'_, AppState>, limit: usize) -> Vec<OpRecord> {
     oplog::read_recent(&state.oplog_path, limit.min(500))
+}
+
+#[tauri::command]
+fn get_oplog_batch(state: State<'_, AppState>, batch_id: String) -> Vec<OpRecord> {
+    oplog::read_batch(&state.oplog_path, &batch_id)
 }
 
 fn undo_last_inner(state: &AppState, app: &AppHandle) -> Result<usize, String> {
@@ -430,6 +435,7 @@ pub fn run() {
             apply_rule_now,
             get_oplog,
             get_rule_last_runs,
+            get_oplog_batch,
             undo_last,
             start_monitoring,
             stop_monitoring,

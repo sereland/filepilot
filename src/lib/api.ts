@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { OpRecord, PlanItem, Rule } from "./types";
+import type { OpRecord, PlanItem, Rule, RuleLastRun } from "./types";
 
 export const api = {
   getRules: (): Promise<Rule[]> => invoke("get_rules"),
@@ -11,7 +11,8 @@ export const api = {
     invoke("preview_rule", { id }),
   applyRuleNow: (id: string, selectedSources: string[]): Promise<OpRecord[]> =>
     invoke("apply_rule_now", { id, selectedSources }),
-  getRuleLastRuns: (): Promise<Record<string, string>> => invoke("get_rule_last_runs"),
+  getRuleLastRuns: (): Promise<Record<string, RuleLastRun>> => invoke("get_rule_last_runs"),
+  getOplogBatch: (batchId: string): Promise<OpRecord[]> => invoke("get_oplog_batch", { batchId }),
   getOplog: (limit: number): Promise<OpRecord[]> =>
     invoke("get_oplog", { limit }),
   undoLast: (): Promise<number> => invoke("undo_last"),
