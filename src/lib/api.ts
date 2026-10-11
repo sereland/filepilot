@@ -23,4 +23,5 @@ export const api = {
     invoke("set_autostart", { enabled }),
   isAutostartEnabled: (): Promise<boolean> => invoke("is_autostart_enabled"),
   pickFolder: (): Promise<string | null> => invoke("pick_folder"),
+  openRuleFolder: (ruleId: string, folder: string): Promise<void> => invoke("open_rule_folder", { ruleId, folder }),
 };

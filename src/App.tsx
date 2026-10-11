@@ -4,7 +4,9 @@ import { useCallback, useEffect, useState } from "react";
 import "./App.css";
 import { IconBrand, IconCheck, IconHistory, IconLayers, IconSettings, IconTemplate, IconX } from "./components/icons";
 import RuleEditor from "./components/RuleEditor";
+import MonitoringStatus from "./components/MonitoringStatus";
 import { api } from "./lib/api";
+import { preventAppContextMenu } from "./lib/contextMenu";
 import { initTheme } from "./lib/theme";
 import type { OpRecord, Rule, RuleLastRun } from "./lib/types";
 import type { Notify } from "./lib/ui";
@@ -43,6 +45,11 @@ export default function App() {
       setRules(nextRules); setRecords(nextRecords); setMonitoring(running); setLastRuns(nextLastRuns);
     } catch (e) { notify("无法加载应用数据：" + String(e), { error: true }); }
   }, [notify]);
+  useEffect(() => {
+    if (!isTauri()) return;
+    document.addEventListener("contextmenu", preventAppContextMenu);
+    return () => document.removeEventListener("contextmenu", preventAppContextMenu);
+  }, []);
   useEffect(() => {
     const cleanupTheme = initTheme();
     void reload();
@@ -87,11 +94,7 @@ export default function App() {
     <aside className="sidebar">
       <div className="brand"><span className="brand-tile"><IconBrand /></span><span className="brand-name">FilePilot</span></div>
       <nav aria-label="主导航">{nav.map((item) => <button key={item.tab} className={"nav-item" + (tab === item.tab ? " active" : "")} aria-current={tab === item.tab ? "page" : undefined} onClick={() => { if (item.tab === "oplog") showLogs(); else setTab(item.tab); }}><item.icon />{item.label}</button>)}</nav>
-      <div className="sidebar-footer"><div className="monitor-card">
-        <div className="monitor-title"><span className={"status-dot" + (monitoring ? " on" : "")} /><span>{monitoring ? "自动整理运行中" : active ? "自动整理已暂停" : "暂无自动规则"}</span></div>
-        {monitorError && <div className="monitor-error" role="alert"><span>{monitorError}</span><button className="text-btn" onClick={() => { setTab("rules"); setMonitorError(""); }}>检查规则 →</button></div>}
-        <button className="btn btn-secondary monitor-button" disabled={monitorBusy || (!monitoring && !active)} onClick={toggleMonitoring}>{monitorBusy ? "处理中…" : monitoring ? "暂停自动整理" : "恢复自动整理"}</button>
-      </div></div>
+      <div className="sidebar-footer"><MonitoringStatus monitoring={monitoring} active={active} busy={monitorBusy} error={monitorError} onToggle={() => { void toggleMonitoring(); }} onCheckRules={() => { setTab("rules"); setMonitorError(""); }} /></div>
     </aside>
     <main className={"content" + (tab === "rules" || tab === "oplog" ? " content-fixed" : "")}>
       {tab === "rules" && <RulesView rules={rules} lastRuns={lastRuns} monitoring={monitoring} onReload={reload} onEdit={setEditing} onTemplates={() => setTab("templates")} onLogs={showLogs} notify={notify} />}

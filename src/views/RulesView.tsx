@@ -31,6 +31,10 @@ export default function RulesView({ rules, lastRuns, monitoring, onReload, onEdi
     finally { setPending(""); }
   };
   const doPreview = (rule: Rule) => perform(rule.id, async () => { setPreviewError(""); setPreview({ rule, items: await api.previewRule(rule.id) }); });
+  const openFolder = async (ruleId: string, folder: string) => {
+    try { await api.openRuleFolder(ruleId, folder); }
+    catch (e) { notify("无法打开文件夹：" + String(e), { error: true }); }
+  };
   const apply = async (selectedSources: string[]) => {
     if (!preview || running || !selectedSources.length) return;
     setRunning(true); setPreviewError("");
@@ -58,9 +62,9 @@ export default function RulesView({ rules, lastRuns, monitoring, onReload, onEdi
             if (!await api.setRuleEnabled(rule.id, !rule.enabled)) throw new Error("规则不存在，请刷新后重试。");
             await onReload(); notify(rule.enabled ? "已改为仅手动整理。" : monitoring ? "已开启这条规则的自动整理。" : "已选择自动整理，全局恢复后运行。");
           }); }} /></div></div>
-        <div className="rule-folder"><IconFolder /><span title={rule.watch_folders.join("\n")}>{rule.watch_folders.join("、") || "未设置来源文件夹"}</span></div>
+        <div className="rule-folders">{rule.watch_folders.length ? rule.watch_folders.map((folder, index) => <button key={index} className="rule-folder folder-link" title={"打开来源文件夹：" + folder} aria-label={"打开来源文件夹：" + folder} onClick={(e) => { if (e.detail <= 1) void openFolder(rule.id, folder); }}><IconFolder /><span>{folder}</span></button>) : <span className="rule-folder"><IconFolder />未设置来源文件夹</span>}</div>
         <dl className="rule-logic"><dt>如果</dt><dd>{rule.conditions.map((condition, index) => <span key={index}>{index > 0 && " 且 "}{condition.type === "extension" ? <>扩展名是 {condition.exts.map((ext) => <span key={ext} className="extension">.{ext.replace(/^\./, "")}</span>)}</> : describeCondition(condition)}</span>)}</dd>
-          <dt>那么</dt><dd>{rule.actions.map((action, index) => <span key={index}>{index > 0 && "；"}{action.type === "move" || action.type === "copy" ? <>{action.type === "move" ? "移动到 " : "复制到 "}<span className="path-token" title={action.dest}><IconFolder /><span>{action.dest}</span></span></> : describeAction(action)}</span>)}</dd></dl>
+          <dt>那么</dt><dd>{rule.actions.map((action, index) => <span key={index}>{index > 0 && "；"}{action.type === "move" || action.type === "copy" ? <>{action.type === "move" ? "移动到 " : "复制到 "}<button className="path-token folder-link" title={"打开目标文件夹：" + action.dest} aria-label={"打开目标文件夹：" + action.dest} onClick={(e) => { if (e.detail <= 1) void openFolder(rule.id, action.dest); }}><IconFolder /><span>{action.dest}</span></button></> : describeAction(action)}</span>)}</dd></dl>
         <div className="card-actions">{lastRuns?.[rule.id] ? <button className="rule-last-run run-link" title="查看这批整理的操作记录" onClick={() => onLogs(lastRuns[rule.id].batch_id)}>{formatLastRun(lastRuns[rule.id].timestamp)} · {lastRuns[rule.id].file_count} 个文件</button> : <span className="rule-last-run">{lastRuns === null ? "执行状态未加载" : "暂未执行"}</span>}<button className="btn btn-secondary btn-small" disabled={!!pending} onClick={() => { void doPreview(rule); }}><IconEye />{pending === rule.id ? "处理中…" : "预览整理"}</button><button className="text-btn" onClick={() => onEdit(rule)} disabled={!!pending}>编辑</button>
           <details className="more" onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) e.currentTarget.open = false; }} onKeyDown={(e) => { if (e.key === "Escape") { e.currentTarget.open = false; e.currentTarget.querySelector("summary")?.focus(); } }}><summary aria-label={rule.name + "的更多操作"}><IconMore /></summary><div className="menu">
             <button disabled={!!pending} onClick={(e) => { e.currentTarget.closest("details")!.open = false; void perform(rule.id, async () => { await api.saveRule({ ...rule, id: "", name: rule.name + "（副本）", enabled: false }); await onReload(); notify("已复制规则，副本默认仅手动。"); }); }}>复制规则</button>

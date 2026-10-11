@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import Modal from "../components/Modal";
-import { IconInbox, IconUndo } from "../components/icons";
+import { IconChevron, IconInbox, IconUndo } from "../components/icons";
 import { api } from "../lib/api";
 import { fileNameOf, type OpRecord } from "../lib/types";
 import { uniqueFileCount, type Notify } from "../lib/ui";
@@ -75,7 +75,7 @@ export default function OplogView({ records, target, onReload, notify }: {
         const undone = group.records.filter((record) => record.undone).length;
         const count = uniqueFileCount(group.records);
         return <details className={"oplog-group" + (target?.batchId === group.id ? " targeted" : "")} ref={target?.batchId === group.id ? targetRef : undefined} key={group.id}><summary><span className="oplog-group-title">{group.name}</span><span className="muted small">{formatTime(group.timestamp)} · {count} 个文件{count !== group.records.length && " · " + group.records.length + " 项操作"}{undone ? undone === group.records.length ? " · 已撤销" : " · 部分撤销" : ""}</span></summary>
-          <div className="table-scroll"><table className="file-table"><thead><tr><th>操作</th><th>来源文件</th><th>目标位置</th><th>状态</th></tr></thead><tbody>{group.records.map((record) => <tr key={record.id}><td>{KIND[record.kind] ?? record.kind}</td><td><details className="record-path"><summary title={record.src}>{fileNameOf(record.src)}</summary><span>{record.src}</span></details></td><td>{record.dest ?? "系统回收站"}</td><td className="muted">{record.undone ? "已撤销" : "已完成"}</td></tr>)}</tbody></table></div>
+          <div className="table-scroll"><table className="file-table"><thead><tr><th>操作</th><th>来源文件</th><th>目标位置</th><th>状态</th></tr></thead><tbody>{group.records.map((record) => <tr key={record.id}><td>{KIND[record.kind] ?? record.kind}</td><td><details className="record-path"><summary title={record.src}><IconChevron /><span className="record-filename">{fileNameOf(record.src)}</span></summary><span>{record.src}</span></details></td><td>{record.dest ?? "系统回收站"}</td><td className="muted">{record.undone ? "已撤销" : "已完成"}</td></tr>)}</tbody></table></div>
         </details>;
       })}</div>}
     </div>

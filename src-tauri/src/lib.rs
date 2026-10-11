@@ -16,6 +16,7 @@ use tauri::{
     App, AppHandle, Emitter, Manager, State, WindowEvent,
 };
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
+use tauri_plugin_opener::OpenerExt;
 
 struct AppState {
     store: Mutex<RuleStore>,
@@ -106,6 +107,41 @@ fn set_rule_enabled(state: State<'_, AppState>, app: AppHandle, id: String, enab
 }
 
 // ---------- 执行 ----------
+
+#[tauri::command]
+fn open_rule_folder(
+    state: State<'_, AppState>,
+    app: AppHandle,
+    rule_id: String,
+    folder: String,
+) -> Result<(), String> {
+    let rule = state
+        .store
+        .lock()
+        .unwrap()
+        .get(&rule_id)
+        .ok_or_else(|| "规则不存在，请刷新后重试。".to_string())?;
+    let path = Path::new(&folder);
+    let allowed = rule
+        .watch_folders
+        .iter()
+        .any(|source| oplog::paths_equal(Path::new(source), path))
+        || rule.actions.iter().any(|action| match action {
+            rules::Action::Move { dest } | rules::Action::Copy { dest } => {
+                oplog::paths_equal(Path::new(dest), path)
+            }
+            _ => false,
+        });
+    if !allowed {
+        return Err("该文件夹不属于此规则，请刷新后重试。".to_string());
+    }
+    if !path.is_dir() {
+        return Err("文件夹不存在或无法访问，请检查路径。".to_string());
+    }
+    app.opener()
+        .open_path(folder, None::<&str>)
+        .map_err(|e| e.to_string())
+}
 
 #[tauri::command]
 fn preview_rule(state: State<'_, AppState>, id: String) -> Vec<engine::PlanItem> {
@@ -431,6 +467,7 @@ pub fn run() {
             save_rule,
             delete_rule,
             set_rule_enabled,
+            open_rule_folder,
             preview_rule,
             apply_rule_now,
             get_oplog,

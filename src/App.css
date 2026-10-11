@@ -34,12 +34,13 @@ input:hover,select:hover { border-color:var(--soft); }
 .nav-item:hover { background:var(--hover); }
 .nav-item.active { background:var(--tint); color:var(--brand); font-weight:600; }
 .sidebar-footer { margin-top:auto; padding-top:24px; }
-.monitor-card { border-top:1px solid var(--line); padding:16px 12px 0; }
-.monitor-title { display:flex; align-items:center; gap:8px; font-size:13px; font-weight:600; }
+.monitor-card { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:10px; border:1px solid var(--line); border-radius:8px; padding:12px; background:var(--surface); }
+.monitor-title { font-size:13px; font-weight:600; }
+.monitor-state { display:flex; align-items:center; gap:6px; margin-top:3px; color:var(--muted); font-size:11px; }
 .status-dot { width:6px; height:6px; border-radius:50%; background:var(--soft); flex-shrink:0; }
 .status-dot.on { background:var(--brand); }
-.monitor-button { width:100%; margin-top:16px; }
-.monitor-error { margin-top:10px; color:var(--danger); font-size:12px; overflow-wrap:anywhere; }
+.monitor-button { padding:5px 9px; }
+.monitor-error { grid-column:1/-1; color:var(--danger); font-size:12px; overflow-wrap:anywhere; }
 .monitor-error .text-btn { display:block; padding:6px 0; color:var(--danger); }
 .content { flex:1; min-width:0; padding:40px 48px 32px; overflow:auto; }
 .content > div { width:100%; max-width:944px; margin:0 auto; }
@@ -88,7 +89,11 @@ input:hover,select:hover { border-color:var(--soft); }
 .switch[aria-checked="true"] { background:var(--brand); }
 .switch:after { content:""; position:absolute; width:16px; height:16px; border-radius:50%; background:#fff; top:2px; left:2px; transition:left 150ms ease; }
 .switch[aria-checked="true"]:after { left:16px; }
-.rule-folder { display:flex; align-items:center; gap:6px; font-size:12px; color:var(--muted); margin-top:6px; min-width:0; }
+.rule-folders { display:grid; gap:3px; margin-top:6px; }
+.rule-folder { display:flex; align-items:center; gap:6px; font-size:12px; color:var(--muted); min-width:0; max-width:100%; width:fit-content; padding:0; background:transparent; }
+.folder-link { border:0; border-radius:4px; text-align:left; }
+.folder-link:hover,.folder-link:focus-visible { color:var(--brand); }
+.folder-link:hover > span,.folder-link:focus-visible > span { text-decoration:underline; text-underline-offset:3px; }
 .rule-folder svg { width:14px; height:14px; }
 .rule-folder span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .rule-logic { display:grid; grid-template-columns:34px minmax(0,1fr); gap:5px 8px; margin:16px 0; font-size:13px; }
@@ -211,7 +216,11 @@ input[aria-invalid="true"]:focus-visible,.type-select[aria-invalid="true"]:focus
 .batch-notice { margin:0 0 16px; color:var(--muted); font-size:12px; }
 .batch-notice.error { color:var(--danger); }
 .oplog-page > .section-label { margin-top:0; }
-.record-path summary { cursor:pointer; }
+.record-path summary { display:flex; align-items:center; gap:5px; min-width:0; cursor:pointer; list-style:none; }
+.record-path summary::-webkit-details-marker { display:none; }
+.record-path summary > svg { width:12px; height:12px; transform:rotate(-90deg); }
+.record-path[open] summary > svg { transform:none; }
+.record-filename { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .record-path > span { display:block; margin-top:8px; color:var(--muted); font-size:11px; }
 .toast { position:fixed; z-index:5; bottom:24px; left:calc(50% + 108px); transform:translateX(-50%); display:flex; align-items:center; gap:12px; padding:12px 16px; border:1px solid var(--line); border-radius:8px; background:var(--surface); box-shadow:0 4px 24px #0002; font-size:13px; max-width:calc(100vw - 32px); }
 .toast > span { overflow-wrap:anywhere; }
@@ -228,8 +237,6 @@ input[aria-invalid="true"]:focus-visible,.type-select[aria-invalid="true"]:focus
   .sidebar nav { display:flex; flex-wrap:wrap; gap:4px; }
   .nav-item { padding:8px 10px; font-size:12px; }
   .sidebar-footer { padding:0; margin-top:14px; }
-  .monitor-card { display:flex; align-items:center; gap:12px; justify-content:space-between; padding:12px 4px 0; }
-  .monitor-button { margin:0; width:auto; }
   .content { padding:28px 20px; min-height:0; }
   .page-header { gap:12px; }
   .page-header h1 { font-size:23px; }
