@@ -214,6 +214,7 @@ pub fn undo_last_batch(log_path: &Path) -> std::io::Result<Vec<OpRecord>> {
     };
 
     let mut undone = Vec::new();
+    let mut last_error = None;
     for record in all.iter_mut().rev() {
         if record.batch_id != batch_id
             || record.undone
@@ -244,14 +245,26 @@ pub fn undo_last_batch(log_path: &Path) -> std::io::Result<Vec<OpRecord>> {
             }
             record.undone = true;
             undone.push(record.clone());
-        } else if undo_one(record).is_ok() {
-            record.undone = true;
-            undone.push(record.clone());
+        } else {
+            match undo_one(record) {
+                Ok(()) => {
+                    record.undone = true;
+                    undone.push(record.clone());
+                }
+                Err(error) => {
+                    last_error = Some(error);
+                }
+            }
         }
     }
 
     // 写回整份日志（P0 数据量小，全量重写可接受）
     rewrite_all(log_path, &all)?;
+    if undone.is_empty() {
+        if let Some(error) = last_error {
+            return Err(error);
+        }
+    }
     Ok(undone)
 }
 
@@ -311,11 +324,15 @@ pub(crate) fn trash_delete_capturing_id(src: &str) -> std::io::Result<Option<Str
         .unwrap_or_default();
     trash::delete(src)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
-    let after = trash::os_limited::list()
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+    // Deletion already succeeded. If listing fails, keep the operation record and
+    // fall back to original-path matching on undo instead of losing the record.
+    let after = match list_trash_items() {
+        Ok(items) => items,
+        Err(_) => return Ok(None),
+    };
     Ok(after
         .into_iter()
-        .find(|i| !before.contains(&i.id))
+        .find(|i| !before.contains(&i.id) && paths_equal(&i.original_path(), Path::new(src)))
         .map(|i| i.id.to_string_lossy().to_string()))
 }
 
@@ -347,13 +364,11 @@ pub(crate) fn trash_delete_capturing_id(src: &str) -> std::io::Result<Option<Str
     )
 ))]
 fn restore_from_trash(record: &OpRecord) -> std::io::Result<()> {
-    let items = trash::os_limited::list()
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+    let items = list_trash_items()?;
     // 1) 按 trash id 精确恢复
     if let Some(tid) = record.trash_id.as_deref() {
         if let Some(item) = items.iter().find(|i| i.id.to_string_lossy() == tid) {
-            return trash::os_limited::restore_all(std::iter::once(item.clone()))
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()));
+            return restore_trash_item(item.clone(), Path::new(&record.src));
         }
     }
     // 2) 兜底：按原始路径匹配
@@ -374,7 +389,7 @@ fn restore_from_trash(record: &OpRecord) -> std::io::Result<()> {
     // 逐个恢复：同名双胞胎一次只恢复一个，避免 RestoreTwins 错误
     let mut last_err = None;
     while let Some(item) = candidates.pop() {
-        match trash::os_limited::restore_all(std::iter::once(item)) {
+        match restore_trash_item(item, src_path) {
             Ok(()) => return Ok(()),
             Err(e) => last_err = Some(e),
         }
@@ -386,6 +401,118 @@ fn restore_from_trash(record: &OpRecord) -> std::io::Result<()> {
             last_err.map(|e| e.to_string()).unwrap_or_default()
         ),
     ))
+}
+
+#[cfg(any(
+    target_os = "windows",
+    all(
+        unix,
+        not(target_os = "macos"),
+        not(target_os = "ios"),
+        not(target_os = "android")
+    )
+))]
+fn restore_trash_item(item: trash::TrashItem, source: &Path) -> std::io::Result<()> {
+    if !paths_equal(&item.original_path(), source) {
+        return Err(std::io::Error::other(
+            "回收站条目与记录中的原路径不一致，已停止恢复",
+        ));
+    }
+    trash::os_limited::restore_all(std::iter::once(item))
+        .map_err(|e| std::io::Error::other(e.to_string()))?;
+    if !source.exists() {
+        return Err(std::io::Error::other(format!(
+            "系统返回恢复成功，但原路径不存在：{}",
+            source.display()
+        )));
+    }
+    Ok(())
+}
+
+#[cfg(any(
+    target_os = "windows",
+    all(
+        unix,
+        not(target_os = "macos"),
+        not(target_os = "ios"),
+        not(target_os = "android")
+    )
+))]
+fn list_trash_items() -> std::io::Result<Vec<trash::TrashItem>> {
+    let items = trash::os_limited::list().map_err(|e| std::io::Error::other(e.to_string()))?;
+    #[cfg(windows)]
+    let items = {
+        let mut items = items;
+        accurate_recycle_names(&mut items)?;
+        items
+    };
+    Ok(items)
+}
+
+/// trash 5 uses SIGDN_PARENTRELATIVE, which can omit registered extensions.
+/// Query PKEY_FileName on the recycle-bin namespace item, where it is the original
+/// name. Reopening its physical $R path would yield the internal storage name.
+#[cfg(windows)]
+fn accurate_recycle_names(items: &mut [trash::TrashItem]) -> std::io::Result<()> {
+    use std::os::windows::ffi::OsStringExt;
+    use windows::core::Interface;
+    use windows::Win32::Storage::EnhancedStorage::PKEY_FileName;
+    use windows::Win32::System::Com::CoTaskMemFree;
+    use windows::Win32::UI::Shell::*;
+    // list() above initializes COM on this thread. Shell owns the returned string
+    // until copied; free it with the allocator specified by IShellItem2::GetString.
+    unsafe {
+        let bin: IShellItem =
+            SHGetKnownFolderItem(&FOLDERID_RecycleBinFolder, KF_FLAG_DEFAULT, None)
+                .map_err(|e| std::io::Error::other(e.to_string()))?;
+        let enumerator: IEnumShellItems = bin
+            .BindToHandler(None, &BHID_EnumItems)
+            .map_err(|e| std::io::Error::other(e.to_string()))?;
+        let mut pending: std::collections::HashMap<_, _> = items
+            .iter()
+            .enumerate()
+            .map(|(index, item)| (item.id.clone(), index))
+            .collect();
+        loop {
+            let mut fetched = 0;
+            let mut values = [None];
+            enumerator
+                .Next(&mut values, Some(&mut fetched))
+                .map_err(|e| std::io::Error::other(e.to_string()))?;
+            if fetched == 0 {
+                break;
+            }
+            let item = values[0]
+                .take()
+                .ok_or_else(|| std::io::Error::other("无法读取回收站条目"))?;
+            let value = item
+                .GetDisplayName(SIGDN_DESKTOPABSOLUTEPARSING)
+                .map_err(|e| std::io::Error::other(e.to_string()))?;
+            let id = std::ffi::OsString::from_wide(value.as_wide());
+            CoTaskMemFree(Some(value.0.cast()));
+            if let Some(index) = pending.remove(&id) {
+                let item: IShellItem2 = item
+                    .cast()
+                    .map_err(|e| std::io::Error::other(e.to_string()))?;
+                let value = item
+                    .GetString(&PKEY_FileName)
+                    .map_err(|e| std::io::Error::other(e.to_string()))?;
+                let name = std::ffi::OsString::from_wide(value.as_wide());
+                CoTaskMemFree(Some(value.0.cast()));
+                if name.is_empty()
+                    || Path::new(&name).components().count() != 1
+                    || Path::new(&name).file_name() != Some(name.as_os_str())
+                {
+                    return Err(std::io::Error::other("回收站原始文件名无效"));
+                }
+                items[index].name = name;
+            }
+        }
+        if !pending.is_empty() {
+            return Err(std::io::Error::other("回收站内容已变化，请重新尝试撤销"));
+        }
+        Ok(())
+    }
 }
 
 /// 不支持 os_limited 的平台：提示手动恢复
@@ -708,6 +835,109 @@ mod tests {
 
         let _ = fs::remove_dir_all(&dir);
         let _ = fs::remove_file(&log);
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn recycle_undo_preserves_shell_hidden_extension() {
+        let dir = std::env::temp_dir().join(format!(
+            "filepilot_recycle_display_{}",
+            uuid::Uuid::new_v4()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        // Shell hides .lnk even when Explorer is configured to show extensions.
+        let src = dir.join("filepilot-regression.lnk");
+        fs::write(&src, "test payload; never executed").unwrap();
+        let id = trash_delete_capturing_id(src.to_str().unwrap()).unwrap();
+        let mut items = trash::os_limited::list().unwrap();
+        let item = items
+            .iter_mut()
+            .find(|item| Some(item.id.to_string_lossy().as_ref()) == id.as_deref())
+            .unwrap();
+        item.name = "filepilot-regression".into();
+        // Explicitly simulate a hidden display name even on this machine's settings.
+        accurate_recycle_names(&mut items).unwrap();
+        assert_eq!(
+            items
+                .iter()
+                .find(|item| Some(item.id.to_string_lossy().as_ref()) == id.as_deref())
+                .unwrap()
+                .original_path(),
+            src
+        );
+        let record = OpRecord::new(
+            "b",
+            "r",
+            "测试",
+            "recycle".into(),
+            src.to_string_lossy().to_string(),
+            None,
+            id,
+        );
+        restore_from_trash(&record).unwrap();
+        assert!(
+            src.exists(),
+            "应保留原始扩展名，恢复目录现有内容：{:?}",
+            fs::read_dir(&dir)
+                .unwrap()
+                .map(|e| e.unwrap().file_name())
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(
+            fs::read_to_string(&src).unwrap(),
+            "test payload; never executed"
+        );
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn recycle_undo_missing_item_reports_failure_without_marking_undone() {
+        let log = tmp_log(&format!("missing_recycle_{}", uuid::Uuid::new_v4()));
+        let src =
+            std::env::temp_dir().join(format!("filepilot_missing_{}.exe", uuid::Uuid::new_v4()));
+        let record = OpRecord::new(
+            "b",
+            "r",
+            "测试",
+            "recycle".into(),
+            src.to_string_lossy().to_string(),
+            None,
+            None,
+        );
+        append_records(&log, &[record]).unwrap();
+        assert!(undo_last_batch(&log)
+            .unwrap_err()
+            .to_string()
+            .contains("回收站中找不到"));
+        assert!(!read_all(&log)[0].undone);
+        fs::remove_file(log).unwrap();
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn recycle_undo_legacy_record_preserves_hidden_extension() {
+        let dir =
+            std::env::temp_dir().join(format!("filepilot_recycle_legacy_{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&dir).unwrap();
+        let src = dir.join("filepilot-regression.lnk");
+        fs::write(&src, "legacy test payload; never executed").unwrap();
+        trash::delete(&src).unwrap();
+        let record = OpRecord::new(
+            "b",
+            "r",
+            "测试",
+            "recycle".into(),
+            src.to_string_lossy().to_string(),
+            None,
+            None,
+        );
+        restore_from_trash(&record).unwrap();
+        assert_eq!(
+            fs::read_to_string(&src).unwrap(),
+            "legacy test payload; never executed"
+        );
+        fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

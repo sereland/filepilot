@@ -151,6 +151,7 @@ dependencies = [
  "sha2",
  "trash",
  "uuid",
+ "windows",
  "zip",
 ]
 

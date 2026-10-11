@@ -31,8 +31,23 @@ jobs:
 
       - name: Test rule engine and archive updates
         run: |
-          cargo test --locked --manifest-path src-tauri/core/Cargo.toml -- --test-threads=1
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $taskExplorerKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced'
+          $taskOriginalSetting = (Get-ItemProperty -Path $taskExplorerKey -ErrorAction SilentlyContinue).HideFileExt
+          New-Item -Path $taskExplorerKey -Force | Out-Null
+          try {
+            foreach ($taskHideFileExt in @(1, 0)) {
+              Set-ItemProperty -Path $taskExplorerKey -Name HideFileExt -Value $taskHideFileExt
+              Write-Host "Test core with HideFileExt=$taskHideFileExt"
+              cargo test --locked --manifest-path src-tauri/core/Cargo.toml -- --test-threads=1
+              if ($LASTEXITCODE -ne 0) { throw "Core tests failed with HideFileExt=$taskHideFileExt" }
+            }
+          } finally {
+            if ($null -eq $taskOriginalSetting) {
+              Remove-ItemProperty -Path $taskExplorerKey -Name HideFileExt -ErrorAction SilentlyContinue
+            } else {
+              Set-ItemProperty -Path $taskExplorerKey -Name HideFileExt -Value $taskOriginalSetting
+            }
+          }
 
       # Tag 推送：走 tauri-action，构建并发布 GitHub Release
       - name: Build Tauri app and release
