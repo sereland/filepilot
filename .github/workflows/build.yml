@@ -29,11 +29,9 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
-      - name: Test preview selection and rule execution status
+      - name: Test rule engine and archive updates
         run: |
-          cargo test --manifest-path src-tauri/core/Cargo.toml preview_selection
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo test --manifest-path src-tauri/core/Cargo.toml rule_last_runs
+          cargo test --locked --manifest-path src-tauri/core/Cargo.toml -- --test-threads=1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       # Tag 推送：走 tauri-action，构建并发布 GitHub Release

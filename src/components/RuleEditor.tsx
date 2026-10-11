@@ -13,6 +13,7 @@ const freshCondition = (type: Condition["type"]): Condition =>
   type === "size_greater_than" ? { type, bytes: 100 * 1024 * 1024 } : { type, days: 7 };
 const freshAction = (type: Action["type"]): Action =>
   type === "move" || type === "copy" ? { type, dest: "" } :
+  type === "move_and_extract" ? { type, dest: "", retention: "all" } :
   type === "rename" ? { type, pattern: "{name}_{date}.{ext}" } : { type };
 
 export default function RuleEditor({ initial, monitoring, onClose, onSaved }: {
@@ -53,7 +54,7 @@ export default function RuleEditor({ initial, monitoring, onClose, onSaved }: {
     try {
       const saved = await api.saveRule({ ...rule, name: rule.name.trim(), watch_folders: folders,
         conditions: rule.conditions.map((condition) => condition.type === "name_contains" ? { ...condition, keyword: condition.keyword.trim() } : condition),
-        actions: rule.actions.map((action) => action.type === "move" || action.type === "copy" ? { ...action, dest: action.dest.trim() } : action) });
+        actions: rule.actions.map((action) => action.type === "move" || action.type === "copy" || action.type === "move_and_extract" ? { ...action, dest: action.dest.trim() } : action) });
       await onSaved(saved);
     } catch (e) { setError("保存失败：" + String(e)); }
     finally { setSaving(false); }
@@ -88,16 +89,17 @@ export default function RuleEditor({ initial, monitoring, onClose, onSaved }: {
         {rule.actions.map((action, index) => <div className="editor-row" key={index}>
           <SelectField aria-label={"动作类型 " + (index + 1)} value={action.type} onChange={(e) => set({ actions: rule.actions.map((value, i) => i === index ? freshAction(e.target.value as Action["type"]) : value) })}>
             <option value="move">移动到</option><option value="copy">复制到</option><option value="rename">重命名为</option><option value="move_to_recycle_bin">移入回收站</option>
+            <option value="move_and_extract">移动并解压到</option>
           </SelectField>
           <div className="condition-value"><ActionFields action={action} validation={validation(`action-${index}`)} pick={pick} onChange={(value) => set({ actions: rule.actions.map((old, i) => i === index ? value : old) })} />{feedback(`action-${index}`)}</div>
           {rule.actions.length > 1 && <button className="icon-btn" aria-label="删除动作" onClick={() => set({ actions: rule.actions.filter((_, i) => i !== index) })}><IconX /></button>}
         </div>)}
         {feedback("actions")}
-        <button className="text-btn add-control" onClick={() => set({ actions: [...rule.actions, freshAction("move")] })}><IconPlus />添加动作</button>
+        <button className="text-btn add-control" disabled={rule.actions.some((action) => action.type === "move_and_extract")} onClick={() => set({ actions: [...rule.actions, freshAction("move")] })}><IconPlus />添加动作</button>
         {rule.actions.some((action) => action.type === "rename") && <p className="editor-help">支持 {"{name}"} 原文件名、{"{ext}"} 扩展名、{"{date}"} 日期、{"{datetime}"} 日期时间。</p>}
       </section>
       <div className="auto-option"><div><strong>自动整理</strong><p>{rule.enabled ? monitoring ? "来源文件夹出现符合条件的文件时自动整理。" : "已选择自动整理；全局恢复后开始监控。" : "仅在你手动预览并确认后整理文件。"}</p></div><Switch checked={rule.enabled} onChange={() => set({ enabled: !rule.enabled })} label="这条规则的自动整理" /></div>
-      <div className="live-summary"><strong>这条规则会这样工作</strong><span>在 {rule.watch_folders.filter(Boolean).join("、") || "来源文件夹"} 中，{rule.conditions.map((condition) => condition.type === "extension" && !condition.exts.length ? "扩展名是所选文件类型" : condition.type === "name_contains" && !condition.keyword ? "文件名包含指定关键词" : describeCondition(condition)).join(" 且 ")} 的文件，将{rule.actions.map((action) => (action.type === "move" || action.type === "copy") && !action.dest ? (action.type === "move" ? "移动到" : "复制到") + "目标文件夹" : describeAction(action)).join("；")}。{rule.enabled ? "参与自动整理。" : "仅手动执行。"}</span></div>
+      <div className="live-summary"><strong>这条规则会这样工作</strong><span>在 {rule.watch_folders.filter(Boolean).join("、") || "来源文件夹"} 中，{rule.conditions.map((condition) => condition.type === "extension" && !condition.exts.length ? "扩展名是所选文件类型" : condition.type === "name_contains" && !condition.keyword ? "文件名包含指定关键词" : describeCondition(condition)).join(" 且 ")} 的文件，将{rule.actions.map((action) => (action.type === "move" || action.type === "copy" || action.type === "move_and_extract") && !action.dest ? (action.type === "move" ? "移动到" : action.type === "copy" ? "复制到" : "移动并解压到") + "目标文件夹" : describeAction(action)).join("；")}。{rule.enabled ? "参与自动整理。" : "仅手动执行。"}</span></div>
     </fieldset>
     {error && <p className="error" role="alert">{error}</p>}
   </Modal>;
@@ -114,6 +116,11 @@ function ConditionFields({ condition, onChange, validation }: { condition: Condi
   }
 }
 function ActionFields({ action, onChange, pick, validation }: { action: Action; onChange: (action: Action) => void; pick: (update: (folder: string) => void) => Promise<void>; validation: FieldValidation }) {
+  if (action.type === "move_and_extract") return <div className="archive-fields">
+    <div className="path-field"><input aria-label="目标文件夹" aria-required="true" {...validation} value={action.dest} onChange={(e) => onChange({ ...action, dest: e.target.value })} placeholder="选择存放 ZIP 和解压目录的文件夹" /><button className="btn btn-secondary" onClick={() => pick((dest) => onChange({ ...action, dest }))}><IconFolder />选择文件夹</button></div>
+    <label className="archive-retention"><span>保留方式</span><SelectField aria-label="压缩包保留方式" value={action.retention} onChange={(e) => onChange({ ...action, retention: e.target.value as "all" | "latest" })}><option value="all">保留全部</option><option value="latest">只保留最新一份</option></SelectField></label>
+    <p className="editor-help">{action.retention === "latest" ? "同组 ZIP 按修改时间保留最新一份，下载编号不作为版本号。新包解压成功后替换旧包和旧目录，保留上一版供整包撤销；下一次成功更新后，更早备份进入回收站。" : "每个 ZIP 单独解压，重名时为 ZIP 和目录一起添加编号。"} 仅支持普通 ZIP。</p>
+  </div>;
   if (action.type === "move" || action.type === "copy") return <div className="path-field"><input aria-label="目标文件夹" aria-required="true" {...validation} value={action.dest} onChange={(e) => onChange({ ...action, dest: e.target.value })} placeholder="选择或粘贴目标路径" /><button className="btn btn-secondary" onClick={() => pick((dest) => onChange({ ...action, dest }))}><IconFolder />选择文件夹</button></div>;
   if (action.type === "rename") return <input aria-label="重命名格式" aria-required="true" {...validation} value={action.pattern} onChange={(e) => onChange({ ...action, pattern: e.target.value })} placeholder="{name}_{date}.{ext}" />;
   return <span className="muted small">文件进入系统回收站，可在回收站恢复。</span>;

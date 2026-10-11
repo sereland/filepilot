@@ -9,8 +9,8 @@ export const api = {
     invoke("set_rule_enabled", { id, enabled }),
   previewRule: (id: string): Promise<PlanItem[]> =>
     invoke("preview_rule", { id }),
-  applyRuleNow: (id: string, selectedSources: string[]): Promise<OpRecord[]> =>
-    invoke("apply_rule_now", { id, selectedSources }),
+  applyRuleNow: (id: string, selectedSources: string[], previewItems?: PlanItem[]): Promise<OpRecord[]> =>
+    invoke("apply_rule_now", { id, selectedSources, previewItems }),
   getRuleLastRuns: (): Promise<Record<string, RuleLastRun>> => invoke("get_rule_last_runs"),
   getOplogBatch: (batchId: string): Promise<OpRecord[]> => invoke("get_oplog_batch", { batchId }),
   getOplog: (limit: number): Promise<OpRecord[]> =>

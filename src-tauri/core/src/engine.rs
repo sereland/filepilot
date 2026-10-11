@@ -6,7 +6,7 @@
 //! - 删除动作一律走回收站，绝不彻底删除。
 
 use crate::oplog::OpRecord;
-use crate::rules::{Action, FileMeta, Rule};
+use crate::rules::{Action, ArchiveRetention, FileMeta, Rule};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -20,10 +20,12 @@ pub struct PlanItem {
     pub action_desc: String,
     /// 目标路径（重命名/移动/复制），回收站动作无目标
     pub dest: Option<String>,
-    /// 动作类型标识：move | copy | rename | recycle
+    /// 动作类型标识：move | copy | rename | recycle | move_extract
     pub kind: String,
     /// 触发的规则名
     pub rule_name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub archive: Option<crate::archive::ArchivePlan>,
 }
 
 /// 跳过的文件名后缀（下载中的临时文件）
@@ -78,16 +80,55 @@ pub fn scan_folder(folder: &Path) -> Vec<FileMeta> {
 
 /// 对单个规则做 dry-run：只计算计划，不执行
 pub fn dry_run(rule: &Rule, folders: &[PathBuf]) -> Vec<PlanItem> {
-    let mut plan = Vec::new();
-    for folder in folders {
-        for meta in scan_folder(folder) {
-            if !rule.matches(&meta) {
-                continue;
+    dry_run_filtered(rule, folders, &|_| true)
+}
+
+pub fn dry_run_filtered(
+    rule: &Rule,
+    folders: &[PathBuf],
+    include: &dyn Fn(&Path) -> bool,
+) -> Vec<PlanItem> {
+    let mut seen = std::collections::HashSet::new();
+    let files: Vec<_> = folders
+        .iter()
+        .flat_map(|folder| scan_folder(folder))
+        .filter(|meta| {
+            include(&meta.path)
+                && rule.matches(meta)
+                && seen.insert(crate::oplog::normalize_path(&meta.path))
+        })
+        .collect();
+    if let Some(Action::MoveAndExtract { dest, retention }) = rule
+        .actions
+        .iter()
+        .find(|a| matches!(a, Action::MoveAndExtract { .. }))
+    {
+        let groups = if *retention == ArchiveRetention::Latest {
+            crate::archive::groups(files)
+        } else {
+            files.into_iter().map(|file| vec![file]).collect()
+        };
+        let mut reserved = std::collections::HashSet::new();
+        return groups.into_iter().map(|files| {
+            let meta = &files[0];
+            let obsolete = files.iter().skip(1).map(|file| file.path.to_string_lossy().to_string()).collect();
+            let mut archive = crate::archive::plan(meta, dest, retention, obsolete, &mut reserved);
+            if rule.actions.len() != 1 { archive.error = Some("移动并解压已包含整个更新流程，请移除其他动作。".into()); }
+            if rule.watch_folders.iter().any(|folder| crate::oplog::paths_equal(Path::new(folder), Path::new(dest))) {
+                archive.error = Some("目标文件夹不能同时作为此规则的来源。".into());
             }
-            for action in &rule.actions {
-                if let Some(item) = plan_for_action(action, &meta, &rule.name) {
-                    plan.push(item);
-                }
+            if *retention == ArchiveRetention::Latest && files.iter().skip(1).any(|file| {
+                file.modified == meta.modified && archive.expected_state.get(&file.path.to_string_lossy().to_string()) != archive.expected_state.get(&meta.path.to_string_lossy().to_string())
+            }) { archive.error = Some("同组 ZIP 的修改时间相同且内容不同，无法确定最新一份；请移走旧包或选择保留全部。".into()); }
+            PlanItem { src: meta.path.to_string_lossy().to_string(), action_desc: rule.actions.iter().find(|a| matches!(a, Action::MoveAndExtract { .. })).unwrap().describe(),
+                dest: Some(archive.folder_dest.clone()), kind: "move_extract".into(), rule_name: rule.name.clone(), archive: Some(archive) }
+        }).collect();
+    }
+    let mut plan = Vec::new();
+    for meta in files {
+        for action in &rule.actions {
+            if let Some(item) = plan_for_action(action, &meta, &rule.name) {
+                plan.push(item);
             }
         }
     }
@@ -110,6 +151,7 @@ fn plan_for_action(action: &Action, meta: &FileMeta, rule_name: &str) -> Option<
                 dest: Some(dest_path.to_string_lossy().to_string()),
                 kind: kind.to_string(),
                 rule_name: rule_name.to_string(),
+                archive: None,
             })
         }
         Action::Rename { pattern } => {
@@ -125,6 +167,7 @@ fn plan_for_action(action: &Action, meta: &FileMeta, rule_name: &str) -> Option<
                 dest: Some(dest_path.to_string_lossy().to_string()),
                 kind: "rename".to_string(),
                 rule_name: rule_name.to_string(),
+                archive: None,
             })
         }
         Action::MoveToRecycleBin => Some(PlanItem {
@@ -133,7 +176,9 @@ fn plan_for_action(action: &Action, meta: &FileMeta, rule_name: &str) -> Option<
             dest: None,
             kind: "recycle".to_string(),
             rule_name: rule_name.to_string(),
+            archive: None,
         }),
+        Action::MoveAndExtract { .. } => None,
     }
 }
 
@@ -170,6 +215,32 @@ pub fn render_rename(pattern: &str, meta: &FileMeta) -> String {
 pub fn apply_plan(plan: &[PlanItem], batch_id: &str, rule_id: &str) -> Vec<OpRecord> {
     let mut records = Vec::new();
     for item in plan {
+        if let Some(archive) = &item.archive {
+            let mut record = OpRecord::new(
+                batch_id,
+                rule_id,
+                &item.rule_name,
+                "move_extract".into(),
+                item.src.clone(),
+                Some(archive.folder_dest.clone()),
+                None,
+            );
+            match crate::archive::execute_record(&item.src, archive, &record) {
+                Ok((manifest, warning)) => {
+                    record.archive_manifest = Some(manifest);
+                    record.warning = warning;
+                }
+                Err(e) => {
+                    record.error = Some(e.to_string());
+                    record.undo_unavailable = Some("未执行成功".into());
+                    record.restored_sources = std::iter::once(item.src.clone())
+                        .chain(archive.obsolete_sources.iter().cloned())
+                        .collect();
+                }
+            }
+            records.push(record);
+            continue;
+        }
         let mut trash_id: Option<String> = None;
         let result: std::io::Result<Option<String>> = match item.kind.as_str() {
             "move" | "rename" => {
@@ -390,6 +461,7 @@ mod tests {
             dest: Some("C:/backup/a.pdf".into()),
             kind: "copy".into(),
             rule_name: "测试".into(),
+            archive: None,
         };
         assert!(select_plan_sources(&[item.clone()], &[]).is_empty());
         assert!(select_plan_sources(&[item], &["C:/demo/other.pdf".into()]).is_empty());
@@ -403,6 +475,7 @@ mod tests {
             dest: Some("C:/backup/a.pdf".into()),
             kind: "copy".into(),
             rule_name: "测试".into(),
+            archive: None,
         };
         let mut move_item = copy.clone();
         move_item.kind = "move".into();
@@ -424,8 +497,12 @@ mod tests {
         touch(&dir, "excluded.pdf", "excluded");
         let rule = Rule {
             actions: vec![
-                Action::Copy { dest: dir.join("backup").to_string_lossy().to_string() },
-                Action::Move { dest: dir.join("archive").to_string_lossy().to_string() },
+                Action::Copy {
+                    dest: dir.join("backup").to_string_lossy().to_string(),
+                },
+                Action::Move {
+                    dest: dir.join("archive").to_string_lossy().to_string(),
+                },
             ],
             ..pdf_rule()
         };
@@ -438,8 +515,14 @@ mod tests {
         let records = apply_plan(&plan, "selected-batch", "r1");
         assert_eq!(records.len(), 2);
         assert!(!dir.join("chosen.pdf").exists());
-        assert_eq!(fs::read_to_string(dir.join("backup/chosen.pdf")).unwrap(), "chosen");
-        assert_eq!(fs::read_to_string(dir.join("archive/chosen.pdf")).unwrap(), "chosen");
+        assert_eq!(
+            fs::read_to_string(dir.join("backup/chosen.pdf")).unwrap(),
+            "chosen"
+        );
+        assert_eq!(
+            fs::read_to_string(dir.join("archive/chosen.pdf")).unwrap(),
+            "chosen"
+        );
         for name in ["excluded.pdf", "new.pdf"] {
             assert!(dir.join(name).exists());
             assert!(!dir.join("backup").join(name).exists());

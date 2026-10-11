@@ -21,6 +21,14 @@ pub enum Condition {
 }
 
 /// 整理动作
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ArchiveRetention {
+    #[default]
+    All,
+    Latest,
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Action {
@@ -32,6 +40,11 @@ pub enum Action {
     Rename { pattern: String },
     /// 移入回收站（安全删除）
     MoveToRecycleBin,
+    MoveAndExtract {
+        dest: String,
+        #[serde(default)]
+        retention: ArchiveRetention,
+    },
 }
 
 /// 一条整理规则
@@ -135,14 +148,22 @@ impl Action {
             Action::Copy { dest } => format!("复制到 {}", dest),
             Action::Rename { pattern } => format!("重命名为 {}", pattern),
             Action::MoveToRecycleBin => "移入回收站".to_string(),
+            Action::MoveAndExtract { dest, retention } => format!(
+                "移动并解压到 {}（{}）",
+                dest,
+                if *retention == ArchiveRetention::Latest {
+                    "只保留最新一份"
+                } else {
+                    "保留全部"
+                }
+            ),
         }
     }
 }
 
 impl Rule {
     pub fn matches(&self, meta: &FileMeta) -> bool {
-        !self.conditions.is_empty()
-            && self.conditions.iter().all(|c| c.matches(meta))
+        !self.conditions.is_empty() && self.conditions.iter().all(|c| c.matches(meta))
     }
 }
 
@@ -209,7 +230,11 @@ mod tests {
 
     #[test]
     fn created_within_days() {
-        let recent = meta("a.txt", 10, Some(SystemTime::now() - Duration::from_secs(3600)));
+        let recent = meta(
+            "a.txt",
+            10,
+            Some(SystemTime::now() - Duration::from_secs(3600)),
+        );
         let old = meta(
             "b.txt",
             10,

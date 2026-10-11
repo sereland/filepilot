@@ -3,7 +3,8 @@
 //! 撤销语义：
 //! - move/rename：把文件移回原路径（原位置被占用则自动加编号，绝不覆盖）
 //! - copy：删除复制出的副本
-//! - recycle：无法撤销（已进系统回收站，用户可手动恢复），标记为不可撤销
+//! - recycle：按回收站条目 id 恢复，旧记录按来源路径匹配
+//! - move_extract：恢复上一版 ZIP、解压目录和同组下载包
 
 use chrono::Local;
 use serde::{Deserialize, Serialize};
@@ -18,7 +19,7 @@ pub struct OpRecord {
     pub timestamp: String,
     pub rule_id: String,
     pub rule_name: String,
-    /// move | copy | rename | recycle
+    /// move | copy | rename | recycle | move_extract
     pub kind: String,
     pub src: String,
     /// 执行后的实际目标路径（重名加编号后的最终路径）
@@ -27,6 +28,18 @@ pub struct OpRecord {
     /// 回收站条目 id（仅 recycle，用于撤销时精确恢复）；旧记录为 None
     #[serde(default)]
     pub trash_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub archive_manifest: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub undo_unavailable: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub warning: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub restored_sources: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub restored_state: Vec<(String, u64, std::time::SystemTime)>,
 }
 
 impl OpRecord {
@@ -50,6 +63,12 @@ impl OpRecord {
             dest,
             undone: false,
             trash_id,
+            archive_manifest: None,
+            undo_unavailable: None,
+            error: None,
+            warning: None,
+            restored_sources: Vec::new(),
+            restored_state: Vec::new(),
         }
     }
 }
@@ -59,9 +78,40 @@ pub fn append_records(log_path: &Path, records: &[OpRecord]) -> std::io::Result<
     if let Some(parent) = log_path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    let mut f = OpenOptions::new().create(true).append(true).open(log_path)?;
+    let mut f = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(log_path)?;
     for r in records {
         writeln!(f, "{}", serde_json::to_string(r).unwrap())?;
+    }
+    Ok(())
+}
+
+/// Package journals can survive a process exit before the separate JSONL write.
+pub fn reconcile_archive_records(log_path: &Path, recovered: &[OpRecord]) -> std::io::Result<()> {
+    if recovered.is_empty() {
+        return Ok(());
+    }
+    let mut all = read_all(log_path);
+    let mut changed = false;
+    for record in recovered {
+        if let Some(existing) = all.iter_mut().find(|r| r.id == record.id) {
+            if record.undone && !existing.undone {
+                *existing = record.clone();
+                changed = true;
+            } else if !existing.undone && existing.warning != record.warning {
+                existing.warning = record.warning.clone();
+                changed = true;
+            }
+        } else {
+            all.push(record.clone());
+            changed = true;
+        }
+    }
+    if changed {
+        all.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
+        rewrite_all(log_path, &all)?;
     }
     Ok(())
 }
@@ -84,7 +134,16 @@ pub fn read_recent(log_path: &Path, limit: usize) -> Vec<OpRecord> {
     let mut all = read_all(log_path);
     all.reverse();
     all.truncate(limit);
-    all
+    all.into_iter().map(with_undo_state).collect()
+}
+
+fn with_undo_state(mut record: OpRecord) -> OpRecord {
+    if !record.undone {
+        if let Some(path) = &record.archive_manifest {
+            record.undo_unavailable = crate::archive::undo_reason(path);
+        }
+    }
+    record
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -99,17 +158,28 @@ pub struct RuleLastRun {
 pub fn rule_last_runs(log_path: &Path) -> std::collections::HashMap<String, RuleLastRun> {
     let records = read_all(log_path);
     let mut last_runs = std::collections::HashMap::new();
-    for record in &records {
-        last_runs.insert(record.rule_id.clone(), RuleLastRun {
-            batch_id: record.batch_id.clone(),
-            timestamp: record.timestamp.clone(),
-            file_count: 0,
-        });
+    for record in records.iter().filter(|r| r.error.is_none()) {
+        last_runs.insert(
+            record.rule_id.clone(),
+            RuleLastRun {
+                batch_id: record.batch_id.clone(),
+                timestamp: record.timestamp.clone(),
+                file_count: 0,
+            },
+        );
     }
-    let mut sources: std::collections::HashMap<String, std::collections::HashSet<String>> = std::collections::HashMap::new();
-    for record in &records {
-        if last_runs.get(&record.rule_id).map(|run| run.batch_id == record.batch_id).unwrap_or(false) {
-            sources.entry(record.rule_id.clone()).or_default().insert(normalize_path(Path::new(&record.src)));
+    let mut sources: std::collections::HashMap<String, std::collections::HashSet<String>> =
+        std::collections::HashMap::new();
+    for record in records.iter().filter(|r| r.error.is_none()) {
+        if last_runs
+            .get(&record.rule_id)
+            .map(|run| run.batch_id == record.batch_id)
+            .unwrap_or(false)
+        {
+            sources
+                .entry(record.rule_id.clone())
+                .or_default()
+                .insert(normalize_path(Path::new(&record.src)));
         }
     }
     for (rule_id, run) in &mut last_runs {
@@ -120,7 +190,12 @@ pub fn rule_last_runs(log_path: &Path) -> std::collections::HashMap<String, Rule
 
 /// 按批次取完整记录，用于从规则卡片定位，不受最近 N 项限制。
 pub fn read_batch(log_path: &Path, batch_id: &str) -> Vec<OpRecord> {
-    read_all(log_path).into_iter().rev().filter(|record| record.batch_id == batch_id).collect()
+    read_all(log_path)
+        .into_iter()
+        .rev()
+        .filter(|record| record.batch_id == batch_id)
+        .map(with_undo_state)
+        .collect()
 }
 
 /// 撤销最近一个未撤销的批次，返回被撤销的记录。
@@ -131,7 +206,7 @@ pub fn undo_last_batch(log_path: &Path) -> std::io::Result<Vec<OpRecord>> {
     let target_batch = all
         .iter()
         .rev()
-        .find(|r| !r.undone)
+        .find(|r| !r.undone && with_undo_state((*r).clone()).undo_unavailable.is_none())
         .map(|r| r.batch_id.clone());
     let batch_id = match target_batch {
         Some(b) => b,
@@ -140,10 +215,36 @@ pub fn undo_last_batch(log_path: &Path) -> std::io::Result<Vec<OpRecord>> {
 
     let mut undone = Vec::new();
     for record in all.iter_mut().rev() {
-        if record.batch_id != batch_id || record.undone {
+        if record.batch_id != batch_id
+            || record.undone
+            || with_undo_state(record.clone()).undo_unavailable.is_some()
+        {
             continue;
         }
-        if undo_one(record).is_ok() {
+        if record.kind == "move_extract" {
+            let path = record
+                .archive_manifest
+                .as_ref()
+                .ok_or_else(|| std::io::Error::other("缺少包更新记录"))?;
+            match crate::archive::undo(path) {
+                Ok((paths, states)) => {
+                    record.restored_sources = paths
+                        .into_iter()
+                        .map(|p| p.to_string_lossy().to_string())
+                        .collect();
+                    record.restored_state = states;
+                }
+                Err(e) => {
+                    if undone.is_empty() {
+                        return Err(e);
+                    }
+                    rewrite_all(log_path, &all)?;
+                    return Ok(undone);
+                }
+            }
+            record.undone = true;
+            undone.push(record.clone());
+        } else if undo_one(record).is_ok() {
             record.undone = true;
             undone.push(record.clone());
         }
@@ -154,12 +255,13 @@ pub fn undo_last_batch(log_path: &Path) -> std::io::Result<Vec<OpRecord>> {
     Ok(undone)
 }
 
-fn undo_one(record: &OpRecord) -> std::io::Result<()> {
+fn undo_one(record: &mut OpRecord) -> std::io::Result<()> {
     match record.kind.as_str() {
         "move" | "rename" => {
-            let dest = Path::new(record.dest.as_ref().ok_or_else(|| {
-                std::io::Error::new(std::io::ErrorKind::Other, "missing dest")
-            })?);
+            let dest =
+                Path::new(record.dest.as_ref().ok_or_else(|| {
+                    std::io::Error::new(std::io::ErrorKind::Other, "missing dest")
+                })?);
             if !dest.exists() {
                 return Ok(()); // 目标已不在，可能被用户手动处理过，跳过
             }
@@ -171,6 +273,7 @@ fn undo_one(record: &OpRecord) -> std::io::Result<()> {
                 std::fs::copy(dest, &back)?;
                 std::fs::remove_file(dest)?;
             }
+            record.restored_sources = vec![back.to_string_lossy().to_string()];
             Ok(())
         }
         "copy" => {
@@ -206,7 +309,8 @@ pub(crate) fn trash_delete_capturing_id(src: &str) -> std::io::Result<Option<Str
     let before: HashSet<OsString> = trash::os_limited::list()
         .map(|v| v.into_iter().map(|i| i.id).collect())
         .unwrap_or_default();
-    trash::delete(src).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+    trash::delete(src)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
     let after = trash::os_limited::list()
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
     Ok(after
@@ -226,7 +330,8 @@ pub(crate) fn trash_delete_capturing_id(src: &str) -> std::io::Result<Option<Str
     )
 )))]
 pub(crate) fn trash_delete_capturing_id(src: &str) -> std::io::Result<Option<String>> {
-    trash::delete(src).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+    trash::delete(src)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
     Ok(None)
 }
 
@@ -263,10 +368,7 @@ fn restore_from_trash(record: &OpRecord) -> std::io::Result<()> {
         }
         return Err(std::io::Error::new(
             std::io::ErrorKind::Other,
-            format!(
-                "在回收站中找不到 {}，请手动从系统回收站恢复",
-                record.src
-            ),
+            format!("在回收站中找不到 {}，请手动从系统回收站恢复", record.src),
         ));
     }
     // 逐个恢复：同名双胞胎一次只恢复一个，避免 RestoreTwins 错误
@@ -346,15 +448,18 @@ fn unique_back(src: &Path) -> std::path::PathBuf {
 }
 
 fn rewrite_all(log_path: &Path, records: &[OpRecord]) -> std::io::Result<()> {
+    let temp = log_path.with_extension(format!("{}.tmp", uuid::Uuid::new_v4()));
     let mut f = OpenOptions::new()
         .create(true)
         .write(true)
         .truncate(true)
-        .open(log_path)?;
+        .open(&temp)?;
     for r in records {
         writeln!(f, "{}", serde_json::to_string(r).unwrap())?;
     }
-    Ok(())
+    f.sync_all()?;
+    drop(f);
+    std::fs::rename(temp, log_path)
 }
 
 #[cfg(test)]
@@ -371,19 +476,40 @@ mod tests {
     #[test]
     fn rule_last_runs_includes_old_and_undone_records() {
         let log = tmp_log("rule_last_runs");
-        let mut old = OpRecord::new("old", "older-rule", "旧规则", "copy".into(), "a".into(), Some("b".into()), None);
+        let mut old = OpRecord::new(
+            "old",
+            "older-rule",
+            "旧规则",
+            "copy".into(),
+            "a".into(),
+            Some("b".into()),
+            None,
+        );
         old.timestamp = "2026-01-01T10:00:00+08:00".into();
         old.undone = true;
         let mut records = vec![old];
         for index in 0..120 {
-            let mut record = OpRecord::new("new", "recent-rule", "新规则", "copy".into(), "a".into(), Some("b".into()), None);
+            let mut record = OpRecord::new(
+                "new",
+                "recent-rule",
+                "新规则",
+                "copy".into(),
+                "a".into(),
+                Some("b".into()),
+                None,
+            );
             record.timestamp = format!("time-{}", index);
             records.push(record);
         }
         append_records(&log, &records).unwrap();
-        assert!(read_recent(&log, 100).iter().all(|r| r.rule_id == "recent-rule"));
+        assert!(read_recent(&log, 100)
+            .iter()
+            .all(|r| r.rule_id == "recent-rule"));
         let last = rule_last_runs(&log);
-        assert_eq!(last.get("older-rule").unwrap().timestamp, "2026-01-01T10:00:00+08:00");
+        assert_eq!(
+            last.get("older-rule").unwrap().timestamp,
+            "2026-01-01T10:00:00+08:00"
+        );
         assert_eq!(last.get("older-rule").unwrap().file_count, 1);
         assert_eq!(last.get("recent-rule").unwrap().timestamp, "time-119");
         let old_batch = read_batch(&log, "old");
@@ -396,12 +522,32 @@ mod tests {
     #[test]
     fn rule_last_runs_counts_unique_sources_in_latest_batch() {
         let log = tmp_log("rule_last_runs_count");
-        let old = OpRecord::new("old", "r1", "图片归档", "move".into(), "old.png".into(), Some("archive/old.png".into()), None);
+        let old = OpRecord::new(
+            "old",
+            "r1",
+            "图片归档",
+            "move".into(),
+            "old.png".into(),
+            Some("archive/old.png".into()),
+            None,
+        );
         let mut records = vec![old];
         for index in 0..12 {
             let src = format!("C:/Demo/{}.png", index);
             for kind in ["copy", "move"] {
-                let mut record = OpRecord::new("latest", "r1", "图片归档", kind.into(), if kind == "copy" { src.clone() } else { src.replace('/', "\\") }, Some(format!("archive/{}.png", index)), None);
+                let mut record = OpRecord::new(
+                    "latest",
+                    "r1",
+                    "图片归档",
+                    kind.into(),
+                    if kind == "copy" {
+                        src.clone()
+                    } else {
+                        src.replace('/', "\\")
+                    },
+                    Some(format!("archive/{}.png", index)),
+                    None,
+                );
                 record.timestamp = "2026-10-11T10:42:00+08:00".into();
                 record.undone = true;
                 records.push(record);
@@ -420,7 +566,19 @@ mod tests {
     #[test]
     fn rule_last_runs_batch_lookup_is_complete_beyond_recent_limit() {
         let log = tmp_log("rule_last_runs_full_batch");
-        let records: Vec<_> = (0..240).map(|index| OpRecord::new("large-batch", "r1", "图片归档", "copy".into(), format!("{}.png", index), Some(format!("out/{}.png", index)), None)).collect();
+        let records: Vec<_> = (0..240)
+            .map(|index| {
+                OpRecord::new(
+                    "large-batch",
+                    "r1",
+                    "图片归档",
+                    "copy".into(),
+                    format!("{}.png", index),
+                    Some(format!("out/{}.png", index)),
+                    None,
+                )
+            })
+            .collect();
         append_records(&log, &records).unwrap();
         assert_eq!(read_recent(&log, 100).len(), 100);
         assert_eq!(read_batch(&log, "large-batch").len(), 240);
@@ -431,7 +589,15 @@ mod tests {
     #[test]
     fn append_and_read_roundtrip() {
         let log = tmp_log("rt");
-        let r = OpRecord::new("b1", "r1", "测试规则", "move".into(), "a".into(), Some("b".into()), None);
+        let r = OpRecord::new(
+            "b1",
+            "r1",
+            "测试规则",
+            "move".into(),
+            "a".into(),
+            Some("b".into()),
+            None,
+        );
         append_records(&log, &[r]).unwrap();
         let all = read_all(&log);
         assert_eq!(all.len(), 1);
@@ -559,6 +725,7 @@ mod tests {
             dest: None,
             kind: "recycle".into(),
             rule_name: "测试".into(),
+            archive: None,
         };
         let log = tmp_log("recycle_id");
         let records = crate::engine::apply_plan(&[item], "b1", "r1");
@@ -573,10 +740,7 @@ mod tests {
                 not(target_os = "android")
             )
         ))]
-        assert!(
-            records[0].trash_id.is_some(),
-            "应捕获到回收站条目 id"
-        );
+        assert!(records[0].trash_id.is_some(), "应捕获到回收站条目 id");
         append_records(&log, &records).unwrap();
 
         let undone = undo_last_batch(&log).unwrap();

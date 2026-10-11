@@ -10,7 +10,9 @@ export type Action =
   | { type: "move"; dest: string }
   | { type: "copy"; dest: string }
   | { type: "rename"; pattern: string }
-  | { type: "move_to_recycle_bin" };
+  | { type: "move_to_recycle_bin" }
+  | { type: "move_and_extract"; dest: string; retention: "all" | "latest" };
+// A package update includes movement, extraction and its undo backup.
 
 export interface Rule {
   id: string;
@@ -27,6 +29,11 @@ export interface PlanItem {
   dest: string | null;
   kind: string; // move | copy | rename | recycle
   rule_name: string;
+  archive?: {
+    root: string; retention: "all" | "latest"; archive_dest: string; folder_dest: string;
+    obsolete_sources: string[]; old_targets: string[]; cleanup_backup: string | null; error: string | null;
+    expected_state: Record<string, string>;
+  };
 }
 
 export interface OpRecord {
@@ -39,6 +46,7 @@ export interface OpRecord {
   src: string;
   dest: string | null;
   undone: boolean;
+  error?: string; warning?: string; undo_unavailable?: string;
 }
 
 export interface RuleLastRun {
@@ -59,6 +67,7 @@ export const ACTION_LABELS: Record<Action["type"], string> = {
   copy: "复制到文件夹",
   rename: "重命名",
   move_to_recycle_bin: "移入回收站",
+  move_and_extract: "移动并解压到",
 };
 
 export function describeCondition(c: Condition): string {
@@ -84,6 +93,8 @@ export function describeAction(a: Action): string {
       return `重命名为 ${a.pattern}`;
     case "move_to_recycle_bin":
       return "移入回收站";
+    case "move_and_extract":
+      return `移动并解压到 ${a.dest}（${a.retention === "latest" ? "只保留最新一份" : "保留全部"}）`;
   }
 }
 

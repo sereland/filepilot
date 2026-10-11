@@ -157,6 +157,12 @@ input:hover,select:hover { border-color:var(--soft); }
 .native-select select { appearance:none; min-height:40px; padding:9px 36px 9px 12px; }
 .native-select > svg { position:absolute; right:12px; top:50%; transform:translateY(-50%); width:14px; height:14px; color:var(--muted); pointer-events:none; }
 .condition-value { flex:1; min-width:0; }
+.archive-fields { display:grid; gap:10px; }
+.archive-retention { display:flex; align-items:center; gap:12px; color:var(--muted); font-size:12px; }
+.archive-retention .native-select { flex:1; max-width:200px; }
+.archive-preview { border:1px solid var(--line); background:var(--bg); border-radius:6px; padding:12px 14px; margin-bottom:12px; font-size:12px; overflow-wrap:anywhere; }
+.archive-preview p { margin:6px 0; }
+.archive-preview ul { margin:6px 0; padding-left:18px; }
 .field-control { flex:1; min-width:0; }
 .required-mark { color:var(--danger); margin-left:4px; }
 .field-error { margin:6px 0 0; color:var(--danger); font-size:12px; font-weight:400; }

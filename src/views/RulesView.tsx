@@ -39,9 +39,13 @@ export default function RulesView({ rules, lastRuns, monitoring, onReload, onEdi
     if (!preview || running || !selectedSources.length) return;
     setRunning(true); setPreviewError("");
     try {
-      const records = await api.applyRuleNow(preview.rule.id, selectedSources);
+      const selectedItems = preview.items.filter((item) => selectedSources.includes(item.src));
+      const records = await api.applyRuleNow(preview.rule.id, selectedSources, selectedItems);
       setPreview(null); await onReload();
-      notify(records.length ? "已整理 " + uniqueFileCount(records) + " 个文件。" : "没有文件被处理，文件可能已发生变化。", { action: { label: "查看记录", onClick: onLogs } });
+      const failures = records.filter((record) => record.error);
+      const completed = records.filter((record) => !record.error);
+      const warning = records.find((record) => record.warning)?.warning;
+      notify(failures.length ? `已整理 ${uniqueFileCount(completed)} 个文件，${failures.length} 项失败：${failures[0].error}` : warning ?? (records.length ? "已整理 " + uniqueFileCount(records) + " 个文件。" : "没有文件被处理，文件可能已发生变化。"), { error: !!failures.length || !!warning, action: { label: "查看记录", onClick: () => onLogs(records[0]?.batch_id) } });
     } catch (e) { setPreviewError("整理失败：" + String(e)); }
     finally { setRunning(false); }
   };
@@ -64,7 +68,7 @@ export default function RulesView({ rules, lastRuns, monitoring, onReload, onEdi
           }); }} /></div></div>
         <div className="rule-folders">{rule.watch_folders.length ? rule.watch_folders.map((folder, index) => <button key={index} className="rule-folder folder-link" title={"打开来源文件夹：" + folder} aria-label={"打开来源文件夹：" + folder} onClick={(e) => { if (e.detail <= 1) void openFolder(rule.id, folder); }}><IconFolder /><span>{folder}</span></button>) : <span className="rule-folder"><IconFolder />未设置来源文件夹</span>}</div>
         <dl className="rule-logic"><dt>如果</dt><dd>{rule.conditions.map((condition, index) => <span key={index}>{index > 0 && " 且 "}{condition.type === "extension" ? <>扩展名是 {condition.exts.map((ext) => <span key={ext} className="extension">.{ext.replace(/^\./, "")}</span>)}</> : describeCondition(condition)}</span>)}</dd>
-          <dt>那么</dt><dd>{rule.actions.map((action, index) => <span key={index}>{index > 0 && "；"}{action.type === "move" || action.type === "copy" ? <>{action.type === "move" ? "移动到 " : "复制到 "}<button className="path-token folder-link" title={"打开目标文件夹：" + action.dest} aria-label={"打开目标文件夹：" + action.dest} onClick={(e) => { if (e.detail <= 1) void openFolder(rule.id, action.dest); }}><IconFolder /><span>{action.dest}</span></button></> : describeAction(action)}</span>)}</dd></dl>
+          <dt>那么</dt><dd>{rule.actions.map((action, index) => <span key={index}>{index > 0 && "；"}{action.type === "move" || action.type === "copy" || action.type === "move_and_extract" ? <>{action.type === "move" ? "移动到 " : action.type === "copy" ? "复制到 " : "移动并解压到 "}<button className="path-token folder-link" title={"打开目标文件夹：" + action.dest} aria-label={"打开目标文件夹：" + action.dest} onClick={(e) => { if (e.detail <= 1) void openFolder(rule.id, action.dest); }}><IconFolder /><span>{action.dest}</span></button>{action.type === "move_and_extract" && <span className="muted small"> · {action.retention === "latest" ? "只保留最新一份" : "保留全部"}</span>}</> : describeAction(action)}</span>)}</dd></dl>
         <div className="card-actions">{lastRuns?.[rule.id] ? <button className="rule-last-run run-link" title="查看这批整理的操作记录" onClick={() => onLogs(lastRuns[rule.id].batch_id)}>{formatLastRun(lastRuns[rule.id].timestamp)} · {lastRuns[rule.id].file_count} 个文件</button> : <span className="rule-last-run">{lastRuns === null ? "执行状态未加载" : "暂未执行"}</span>}<button className="btn btn-secondary btn-small" disabled={!!pending} onClick={() => { void doPreview(rule); }}><IconEye />{pending === rule.id ? "处理中…" : "预览整理"}</button><button className="text-btn" onClick={() => onEdit(rule)} disabled={!!pending}>编辑</button>
           <details className="more" onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) e.currentTarget.open = false; }} onKeyDown={(e) => { if (e.key === "Escape") { e.currentTarget.open = false; e.currentTarget.querySelector("summary")?.focus(); } }}><summary aria-label={rule.name + "的更多操作"}><IconMore /></summary><div className="menu">
             <button disabled={!!pending} onClick={(e) => { e.currentTarget.closest("details")!.open = false; void perform(rule.id, async () => { await api.saveRule({ ...rule, id: "", name: rule.name + "（副本）", enabled: false }); await onReload(); notify("已复制规则，副本默认仅手动。"); }); }}>复制规则</button>

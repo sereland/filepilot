@@ -5,7 +5,7 @@ import { api } from "../lib/api";
 import { fileNameOf, type OpRecord } from "../lib/types";
 import { uniqueFileCount, type Notify } from "../lib/ui";
 
-const KIND: Record<string, string> = { move: "移动", copy: "复制", rename: "重命名", recycle: "移入回收站" };
+const KIND: Record<string, string> = { move: "移动", copy: "复制", rename: "重命名", recycle: "移入回收站", move_extract: "移动并解压" };
 function groupByBatch(records: OpRecord[]) {
   const groups: { id: string; name: string; timestamp: string; records: OpRecord[] }[] = [];
   const map = new Map<string, typeof groups[number]>();
@@ -38,7 +38,7 @@ export default function OplogView({ records, target, onReload, notify }: {
     if (index < 0) groups.push(group); else groups[index] = group;
   }
   // 撤销仍针对最近批次；定位到历史记录不会改变撤销目标。
-  const next = recentGroups.find((group) => group.records.some((record) => !record.undone));
+  const next = recentGroups.find((group) => group.records.some((record) => !record.undone && !record.error && !record.undo_unavailable));
   useEffect(() => {
     if (!target) { setTargetData(null); return; }
     let disposed = false;
@@ -75,10 +75,10 @@ export default function OplogView({ records, target, onReload, notify }: {
         const undone = group.records.filter((record) => record.undone).length;
         const count = uniqueFileCount(group.records);
         return <details className={"oplog-group" + (target?.batchId === group.id ? " targeted" : "")} ref={target?.batchId === group.id ? targetRef : undefined} key={group.id}><summary><span className="oplog-group-title">{group.name}</span><span className="muted small">{formatTime(group.timestamp)} · {count} 个文件{count !== group.records.length && " · " + group.records.length + " 项操作"}{undone ? undone === group.records.length ? " · 已撤销" : " · 部分撤销" : ""}</span></summary>
-          <div className="table-scroll"><table className="file-table"><thead><tr><th>操作</th><th>来源文件</th><th>目标位置</th><th>状态</th></tr></thead><tbody>{group.records.map((record) => <tr key={record.id}><td>{KIND[record.kind] ?? record.kind}</td><td><details className="record-path"><summary title={record.src}><IconChevron /><span className="record-filename">{fileNameOf(record.src)}</span></summary><span>{record.src}</span></details></td><td>{record.dest ?? "系统回收站"}</td><td className="muted">{record.undone ? "已撤销" : "已完成"}</td></tr>)}</tbody></table></div>
+          <div className="table-scroll"><table className="file-table"><thead><tr><th>操作</th><th>来源文件</th><th>目标位置</th><th>状态</th></tr></thead><tbody>{group.records.map((record) => <tr key={record.id}><td>{KIND[record.kind] ?? record.kind}</td><td><details className="record-path"><summary title={record.src}><IconChevron /><span className="record-filename">{fileNameOf(record.src)}</span></summary><span>{record.src}</span></details></td><td>{record.dest ?? "系统回收站"}</td><td className={record.error ? "error" : "muted"}>{record.undone ? "已撤销" : record.error ? "执行失败" : "已完成"}{(record.error || record.warning || record.undo_unavailable) && <details className="small"><summary>{record.error || record.warning ? "查看说明" : "不可撤销"}</summary>{record.error ?? record.warning ?? record.undo_unavailable}</details>}</td></tr>)}</tbody></table></div>
         </details>;
       })}</div>}
     </div>
-    {confirming && next && <Modal compact title="撤销上次整理？" onClose={() => setConfirming(false)} busy={undoing} footer={<><button className="btn btn-secondary" disabled={undoing} onClick={() => setConfirming(false)}>取消</button><button className="btn btn-primary" disabled={undoing} onClick={() => { void undo(); }}>{undoing ? "撤销中…" : "确认撤销"}</button></>}><p>将回滚最近一批「{next.name}」中尚未撤销的操作。</p><p className="muted small">移动和重命名会恢复原位置，复制会删除副本。撤销结果以文件的当前状态为准。</p>{undoError && <p className="error" role="alert">{undoError}</p>}</Modal>}
+    {confirming && next && <Modal compact title="撤销上次整理？" onClose={() => setConfirming(false)} busy={undoing} footer={<><button className="btn btn-secondary" disabled={undoing} onClick={() => setConfirming(false)}>取消</button><button className="btn btn-primary" disabled={undoing} onClick={() => { void undo(); }}>{undoing ? "撤销中…" : "确认撤销"}</button></>}><p>将回滚最近一批「{next.name}」中仍可撤销的操作。</p><p className="muted small">{next.records.some((record) => record.kind === "move_extract") ? "ZIP 和解压目录整包撤销，恢复旧包及旧目录，并将新 ZIP 送回来源。文件被修改或原位置被占用时停止撤销；恢复的文件暂不参与自动整理，修改后或手动确认才再次处理。" : "移动和重命名会恢复原位置，复制会删除副本。撤销结果以文件的当前状态为准。"}</p>{undoError && <p className="error" role="alert">{undoError}</p>}</Modal>}
   </div>;
 }

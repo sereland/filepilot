@@ -2,6 +2,7 @@
 //! 不依赖 Tauri，可独立单元测试。
 
 pub mod engine;
+pub mod archive;
 pub mod oplog;
 pub mod rules;
 pub mod store;

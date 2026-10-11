@@ -1,7 +1,7 @@
 //! 文件夹监控：用 notify-debouncer-mini 监听，防抖后触发规则自动执行。
 //!
 //! 设计：
-//! - 每个被规则引用的 watch_folder 起一个 debouncer（2 秒防抖）。
+//! - 每个被规则引用的 watch_folder 起一个 debouncer（6 秒防抖）。
 //! - 防抖事件到达后，对覆盖该文件夹的**已启用**规则执行 apply（非 dry-run，
 //!   因为规则在保存时已经过用户的 dry-run 确认）。
 //! - 执行后通过 callback 通知上层（上层负责写 oplog、刷新 UI）。
@@ -17,7 +17,7 @@ use crate::engine;
 use crate::rules::Rule;
 
 /// 防抖时长：文件夹"安静"这么久后才触发整理
-const DEBOUNCE_SECS: u64 = 2;
+const DEBOUNCE_SECS: u64 = 6;
 
 pub enum WatchEvent {
     /// 某个被监控文件夹有稳定变化，需要跑规则
@@ -61,8 +61,7 @@ pub fn start_watching(folders: Vec<PathBuf>, on_settled: ApplyCallback) -> Watch
             };
             match new_debouncer(Duration::from_secs(DEBOUNCE_SECS), handler) {
                 Ok(mut d) => {
-                    if d
-                        .watcher()
+                    if d.watcher()
                         .watch(folder, notify::RecursiveMode::NonRecursive)
                         .is_ok()
                     {
@@ -102,14 +101,12 @@ pub fn apply_rules_for_folder(
 ) -> Vec<(String, Vec<crate::oplog::OpRecord>)> {
     let mut out = Vec::new();
     for rule in rules.iter().filter(|r| r.enabled) {
-        let watches = rule
-            .watch_folders
-            .iter()
-            .any(|f| Path::new(f) == folder);
+        let watches = rule.watch_folders.iter().any(|f| Path::new(f) == folder);
         if !watches {
             continue;
         }
-        let plan = engine::dry_run(rule, &[folder.to_path_buf()]);
+        let plan =
+            engine::dry_run_filtered(rule, &[folder.to_path_buf()], &|path| !should_skip(path));
         let plan: Vec<_> = plan
             .into_iter()
             .filter(|p| !should_skip(Path::new(&p.src)))
@@ -194,8 +191,12 @@ mod tests {
             name: "规则".into(),
             enabled: true,
             watch_folders: vec![dir.to_string_lossy().to_string()],
-            conditions: vec![Condition::Extension { exts: vec!["pdf".into()] }],
-            actions: vec![Action::Move { dest: dest.to_string_lossy().to_string() }],
+            conditions: vec![Condition::Extension {
+                exts: vec!["pdf".into()],
+            }],
+            actions: vec![Action::Move {
+                dest: dest.to_string_lossy().to_string(),
+            }],
         };
         let skip_target = keep.clone();
         let res = apply_rules_for_folder(&[rule], &dir, &|p| p == skip_target);

@@ -17,7 +17,8 @@ export function validateRule(rule: Rule): Record<string, string> {
   });
   if (!rule.actions.length) errors.actions = "请至少添加一个执行动作。";
   rule.actions.forEach((action, index) => {
-    if ((action.type === "move" || action.type === "copy") && !action.dest.trim()) errors[`action-${index}`] = "请选择目标文件夹。";
+    if ((action.type === "move" || action.type === "copy" || action.type === "move_and_extract") && !action.dest.trim()) errors[`action-${index}`] = "请选择目标文件夹。";
+    if (action.type === "move_and_extract" && rule.actions.length > 1) errors[`action-${index}`] = "移动并解压已包含整个更新流程，请移除其他动作。";
     if (action.type === "rename" && !action.pattern.trim()) errors[`action-${index}`] = "请输入重命名格式。";
   });
   return errors;

@@ -53,6 +53,8 @@ npm run tauri dev        # 需要 Rust 工具链 + 系统依赖
 
 仅检查前端可运行 `npm run build`。普通浏览器可查看页面和编辑器，真实文件操作、文件夹选择和监控需在 Tauri 桌面应用中使用。
 
+支持“移动并解压到”：普通 ZIP 可保留全部，也可把浏览器下载编号的同组包更新为最新一份，保留上一版供整包撤销。使用与边界见 [压缩包更新设计](design/ARCHIVE_UPDATE.md)。
+
 Windows 安装包由 GitHub Actions 自动构建（见 `.github/workflows/build.yml`），每次打 tag 自动发布到 Releases。
 
 ## 许可证 / License

@@ -61,6 +61,7 @@ export default function App() {
       };
       subscribe(listen("fp://oplog-updated", () => { void reload(); }));
       subscribe(listen<boolean>("fp://monitoring-changed", (event) => setMonitoring(event.payload)));
+      subscribe(listen<string>("fp://operation-error", (event) => notify(event.payload, { error: true, action: { label: "查看记录", onClick: () => setTab("oplog") } })));
     }
     return () => { disposed = true; cleanups.forEach((cleanup) => cleanup()); cleanupTheme?.(); };
   }, [reload, notify]);

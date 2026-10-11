@@ -23,10 +23,64 @@ struct AppState {
     oplog_path: PathBuf,
     watcher: Mutex<Option<watcher::WatchHandle>>,
     monitoring: Mutex<bool>,
-    /// 撤销保护名单：(文件路径, 撤销时间)，持久化到磁盘。
+    /// 撤销保护名单：文件路径、大小和精确修改时间，持久化到磁盘。
     /// 监控扫描时跳过"撤销后未被修改过"的文件，避免撤销→恢复→被规则再次处理→无限循环。
-    recently_undone: Mutex<Vec<(PathBuf, SystemTime)>>,
+    recently_undone: Mutex<Vec<ProtectedFile>>,
     skip_list_path: PathBuf,
+    operations: Mutex<()>,
+}
+
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+struct ProtectedFile {
+    path: PathBuf,
+    size: u64,
+    modified: SystemTime,
+}
+
+fn protection(path: &Path) -> Option<ProtectedFile> {
+    let meta = std::fs::metadata(path).ok()?;
+    if !meta.is_file() {
+        return None;
+    }
+    Some(ProtectedFile {
+        path: path.to_path_buf(),
+        size: meta.len(),
+        modified: meta.modified().ok()?,
+    })
+}
+
+fn unchanged(file: &ProtectedFile) -> bool {
+    protection(&file.path)
+        .map(|now| now.size == file.size && now.modified == file.modified)
+        .unwrap_or(false)
+}
+
+fn protect_restored(path: &Path, files: &mut Vec<ProtectedFile>) {
+    if let Some(file) = protection(path) {
+        files.retain(|old| !oplog::paths_equal(&old.path, path));
+        files.push(file);
+    } else if path.is_dir() {
+        if let Ok(entries) = std::fs::read_dir(path) {
+            for entry in entries.flatten() {
+                if !entry.file_type().map(|t| t.is_symlink()).unwrap_or(true) {
+                    protect_restored(&entry.path(), files);
+                }
+            }
+        }
+    }
+}
+
+fn protect_failed_archives(state: &AppState, records: &[OpRecord]) {
+    let mut skip = state.recently_undone.lock().unwrap();
+    for record in records
+        .iter()
+        .filter(|r| r.kind == "move_extract" && r.error.is_some())
+    {
+        for path in &record.restored_sources {
+            protect_restored(Path::new(path), &mut skip);
+        }
+    }
+    save_skip_list(&state.skip_list_path, &skip);
 }
 
 impl AppState {
@@ -38,38 +92,30 @@ impl AppState {
             monitoring: Mutex::new(false),
             recently_undone: Mutex::new(load_skip_list(&skip_list_path)),
             skip_list_path,
+            operations: Mutex::new(()),
         }
     }
 }
 
-/// 从磁盘加载撤销保护名单（JSON：[(路径, 撤销时间的 unix 秒)]），损坏或缺失时返回空
-fn load_skip_list(path: &Path) -> Vec<(PathBuf, SystemTime)> {
+/// 加载文件状态保护名单，兼容此前按撤销时间保存的名单。
+fn load_skip_list(path: &Path) -> Vec<ProtectedFile> {
     let data = std::fs::read_to_string(path).unwrap_or_default();
     if data.trim().is_empty() {
         return Vec::new();
     }
+    if let Ok(files) = serde_json::from_str::<Vec<ProtectedFile>>(&data) {
+        return files;
+    }
     serde_json::from_str::<Vec<(String, u64)>>(data.as_str())
         .unwrap_or_default()
         .into_iter()
-        .filter_map(|(p, secs)| {
-            SystemTime::UNIX_EPOCH
-                .checked_add(std::time::Duration::from_secs(secs))
-                .map(|t| (PathBuf::from(p), t))
-        })
+        .filter_map(|(p, _)| protection(Path::new(&p)))
         .collect()
 }
 
 /// 持久化撤销保护名单，失败时静默忽略（下次撤销会重试）
-fn save_skip_list(path: &Path, list: &[(PathBuf, SystemTime)]) {
-    let data: Vec<(String, u64)> = list
-        .iter()
-        .filter_map(|(p, t)| {
-            t.duration_since(SystemTime::UNIX_EPOCH)
-                .ok()
-                .map(|d| (p.to_string_lossy().to_string(), d.as_secs()))
-        })
-        .collect();
-    if let Ok(json) = serde_json::to_string(&data) {
+fn save_skip_list(path: &Path, list: &[ProtectedFile]) {
+    if let Ok(json) = serde_json::to_string(list) {
         let _ = std::fs::write(path, json);
     }
 }
@@ -127,7 +173,9 @@ fn open_rule_folder(
         .iter()
         .any(|source| oplog::paths_equal(Path::new(source), path))
         || rule.actions.iter().any(|action| match action {
-            rules::Action::Move { dest } | rules::Action::Copy { dest } => {
+            rules::Action::Move { dest }
+            | rules::Action::Copy { dest }
+            | rules::Action::MoveAndExtract { dest, .. } => {
                 oplog::paths_equal(Path::new(dest), path)
             }
             _ => false,
@@ -144,14 +192,21 @@ fn open_rule_folder(
 }
 
 #[tauri::command]
-fn preview_rule(state: State<'_, AppState>, id: String) -> Vec<engine::PlanItem> {
-    let store = state.store.lock().unwrap();
-    let rule = match store.get(&id) {
-        Some(r) => r,
-        None => return Vec::new(),
-    };
-    let folders: Vec<PathBuf> = rule.watch_folders.iter().map(PathBuf::from).collect();
-    engine::dry_run(&rule, &folders)
+async fn preview_rule(app: AppHandle, id: String) -> Result<Vec<engine::PlanItem>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state: State<'_, AppState> = app.state();
+        let _operation = state.operations.lock().unwrap();
+        let rule = state
+            .store
+            .lock()
+            .unwrap()
+            .get(&id)
+            .ok_or_else(|| "规则不存在".to_string())?;
+        let folders: Vec<PathBuf> = rule.watch_folders.iter().map(PathBuf::from).collect();
+        Ok(engine::dry_run(&rule, &folders))
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 fn apply_rule_inner(
@@ -159,7 +214,9 @@ fn apply_rule_inner(
     app: &AppHandle,
     id: &str,
     selected_sources: &[String],
+    preview_items: Option<&[engine::PlanItem]>,
 ) -> Result<Vec<OpRecord>, String> {
+    let _operation = state.operations.lock().unwrap();
     if selected_sources.is_empty() {
         return Ok(Vec::new());
     }
@@ -171,12 +228,25 @@ fn apply_rule_inner(
         .ok_or_else(|| "规则不存在".to_string())?;
 
     let folders: Vec<PathBuf> = rule.watch_folders.iter().map(PathBuf::from).collect();
-    let plan = engine::select_plan_sources(&engine::dry_run(&rule, &folders), selected_sources);
+    let plan = engine::dry_run_filtered(&rule, &folders, &|path| {
+        selected_sources
+            .iter()
+            .any(|source| oplog::paths_equal(Path::new(source), path))
+    });
+    if plan.iter().any(|item| item.archive.is_some()) {
+        let expected = preview_items.ok_or_else(|| "请先预览包更新。".to_string())?;
+        if serde_json::to_value(&plan).map_err(|e| e.to_string())?
+            != serde_json::to_value(expected).map_err(|e| e.to_string())?
+        {
+            return Err("文件或目标内容已变化，请重新预览后再整理。".to_string());
+        }
+    }
     if plan.is_empty() {
         return Ok(Vec::new());
     }
     let batch_id = uuid::Uuid::new_v4().to_string();
     let records = engine::apply_plan(&plan, &batch_id, &rule.id);
+    protect_failed_archives(state, &records);
     if !records.is_empty() {
         oplog::append_records(&state.oplog_path, &records)
             .map_err(|e| format!("写入日志失败: {}", e))?;
@@ -186,17 +256,30 @@ fn apply_rule_inner(
 }
 
 #[tauri::command]
-fn apply_rule_now(
-    state: State<'_, AppState>,
+async fn apply_rule_now(
     app: AppHandle,
     id: String,
     selected_sources: Vec<String>,
+    preview_items: Option<Vec<engine::PlanItem>>,
 ) -> Result<Vec<OpRecord>, String> {
-    apply_rule_inner(state.inner(), &app, &id, &selected_sources)
+    tauri::async_runtime::spawn_blocking(move || {
+        let state: State<'_, AppState> = app.state();
+        apply_rule_inner(
+            state.inner(),
+            &app,
+            &id,
+            &selected_sources,
+            preview_items.as_deref(),
+        )
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-fn get_rule_last_runs(state: State<'_, AppState>) -> std::collections::HashMap<String, oplog::RuleLastRun> {
+fn get_rule_last_runs(
+    state: State<'_, AppState>,
+) -> std::collections::HashMap<String, oplog::RuleLastRun> {
     oplog::rule_last_runs(&state.oplog_path)
 }
 
@@ -211,15 +294,31 @@ fn get_oplog_batch(state: State<'_, AppState>, batch_id: String) -> Vec<OpRecord
 }
 
 fn undo_last_inner(state: &AppState, app: &AppHandle) -> Result<usize, String> {
+    let _operation = state.operations.lock().unwrap();
     let undone = oplog::undo_last_batch(&state.oplog_path).map_err(|e| e.to_string())?;
     if !undone.is_empty() {
         // 记入撤销保护名单：监控不再自动处理这些文件（除非它们之后被修改/重新下载）
-        let now = SystemTime::now();
         let mut skip = state.recently_undone.lock().unwrap();
         for r in &undone {
-            let p = PathBuf::from(&r.src);
-            skip.retain(|(ep, _)| ep != &p);
-            skip.push((p, now));
+            if !r.restored_state.is_empty() {
+                for (path, size, modified) in &r.restored_state {
+                    let file = ProtectedFile {
+                        path: PathBuf::from(path),
+                        size: *size,
+                        modified: *modified,
+                    };
+                    if unchanged(&file) {
+                        skip.retain(|old| !oplog::paths_equal(&old.path, &file.path));
+                        skip.push(file);
+                    }
+                }
+            } else if r.restored_sources.is_empty() {
+                protect_restored(Path::new(&r.src), &mut skip);
+            } else {
+                for path in &r.restored_sources {
+                    protect_restored(Path::new(path), &mut skip);
+                }
+            }
         }
         save_skip_list(&state.skip_list_path, &skip);
         drop(skip);
@@ -229,8 +328,13 @@ fn undo_last_inner(state: &AppState, app: &AppHandle) -> Result<usize, String> {
 }
 
 #[tauri::command]
-fn undo_last(state: State<'_, AppState>, app: AppHandle) -> Result<usize, String> {
-    undo_last_inner(state.inner(), &app)
+async fn undo_last(app: AppHandle) -> Result<usize, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state: State<'_, AppState> = app.state();
+        undo_last_inner(state.inner(), &app)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 // ---------- 监控 ----------
@@ -272,31 +376,31 @@ fn start_monitoring_inner(state: &AppState, app: &AppHandle) -> bool {
     let oplog_path = state.oplog_path.clone();
     let callback: watcher::ApplyCallback = Box::new(move |folder| {
         let app_state: State<'_, AppState> = app2.state();
+        let _operation = app_state.operations.lock().unwrap();
         // 快照撤销保护名单，并清理已失效条目（文件已删除或撤销后又被修改过）
-        let skip_list: Vec<(PathBuf, SystemTime)> = {
+        let skip_list: Vec<ProtectedFile> = {
             let mut guard = app_state.recently_undone.lock().unwrap();
-            guard.retain(|(p, t)| {
-                std::fs::metadata(p.as_path())
-                    .and_then(|m| m.modified())
-                    .map(|mt| mt <= *t)
-                    .unwrap_or(false)
-            });
+            guard.retain(unchanged);
             guard.clone()
         };
         let should_skip = |path: &Path| -> bool {
-            match std::fs::metadata(path).and_then(|m| m.modified()) {
-                Ok(mt) => skip_list
-                    .iter()
-                    .any(|(p, t)| oplog::paths_equal(p, path) && mt <= *t),
-                Err(_) => false,
-            }
+            skip_list
+                .iter()
+                .any(|file| oplog::paths_equal(&file.path, path) && unchanged(file))
         };
         let rules = app_state.store.lock().unwrap().all();
         let results = watcher::apply_rules_for_folder(&rules, folder, &should_skip);
         let mut total = 0;
         for (_rule_id, records) in &results {
             total += records.len();
+            protect_failed_archives(app_state.inner(), records);
             let _ = oplog::append_records(&oplog_path, records);
+            if let Some(message) = records
+                .iter()
+                .find_map(|r| r.error.as_ref().or(r.warning.as_ref()))
+            {
+                let _ = app2.emit("fp://operation-error", message.clone());
+            }
         }
         if total > 0 {
             let _ = app2.emit("fp://oplog-updated", total);
@@ -393,14 +497,16 @@ fn build_tray(app: &App) -> tauri::Result<()> {
                 } else {
                     start_monitoring_inner(state.inner(), app);
                 }
-                let _ = app.emit(
-                    "fp://monitoring-changed",
-                    *state.monitoring.lock().unwrap(),
-                );
+                let _ = app.emit("fp://monitoring-changed", *state.monitoring.lock().unwrap());
             }
             "undo" => {
-                let state: State<'_, AppState> = app.state();
-                let _ = undo_last_inner(state.inner(), app);
+                let app = app.clone();
+                tauri::async_runtime::spawn_blocking(move || {
+                    let state: State<'_, AppState> = app.state();
+                    if let Err(e) = undo_last_inner(state.inner(), &app) {
+                        let _ = app.emit("fp://operation-error", e);
+                    }
+                });
             }
             "quit" => app.exit(0),
             _ => {}
@@ -451,6 +557,38 @@ pub fn run() {
             // 启动时自动开始监控
             let handle = app.handle().clone();
             let state_ref: State<'_, AppState> = handle.state();
+            // Recover journaled interrupted package operations before monitoring starts.
+            let mut archive_roots = HashSet::new();
+            for rule in state_ref.store.lock().unwrap().all() {
+                for action in rule.actions {
+                    if let rules::Action::MoveAndExtract { dest, .. } = action {
+                        archive_roots.insert(dest);
+                    }
+                }
+            }
+            for root in archive_roots {
+                match filepilot_core::archive::recover(Path::new(&root)) {
+                    Ok(records) => {
+                        let _ = oplog::reconcile_archive_records(&state_ref.oplog_path, &records);
+                        let mut skip = state_ref.recently_undone.lock().unwrap();
+                        for record in records.iter().filter(|r| r.undone) {
+                            for (path, size, modified) in &record.restored_state {
+                                let file = ProtectedFile {
+                                    path: PathBuf::from(path),
+                                    size: *size,
+                                    modified: *modified,
+                                };
+                                if unchanged(&file) {
+                                    skip.retain(|old| !oplog::paths_equal(&old.path, &file.path));
+                                    skip.push(file);
+                                }
+                            }
+                        }
+                        save_skip_list(&state_ref.skip_list_path, &skip);
+                    }
+                    Err(e) => eprintln!("包更新恢复未完成：{e}"),
+                }
+            }
             start_monitoring_inner(state_ref.inner(), &handle);
 
             Ok(())
