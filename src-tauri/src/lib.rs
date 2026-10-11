@@ -2,13 +2,13 @@
 //!
 //! 核心逻辑在 filepilot-core crate（可独立测试），这里只做胶水层。
 
+use filepilot_core::protection::{protect_restored, protection, unchanged, ProtectedFile};
 use filepilot_core::{engine, oplog, rules, store, watcher};
 use oplog::OpRecord;
 use rules::Rule;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use std::time::SystemTime;
 use store::RuleStore;
 use tauri::{
     menu::{Menu, MenuItem},
@@ -23,51 +23,11 @@ struct AppState {
     oplog_path: PathBuf,
     watcher: Mutex<Option<watcher::WatchHandle>>,
     monitoring: Mutex<bool>,
-    /// 撤销保护名单：文件路径、大小和精确修改时间，持久化到磁盘。
-    /// 监控扫描时跳过"撤销后未被修改过"的文件，避免撤销→恢复→被规则再次处理→无限循环。
+    /// 撤销/整理保护：文件状态及目录内部条目状态，持久化到磁盘。
+    /// 跳过未变化的恢复项，以及复制来源和重命名目标，避免事件反馈循环。
     recently_undone: Mutex<Vec<ProtectedFile>>,
     skip_list_path: PathBuf,
     operations: Mutex<()>,
-}
-
-#[derive(Clone, serde::Serialize, serde::Deserialize)]
-struct ProtectedFile {
-    path: PathBuf,
-    size: u64,
-    modified: SystemTime,
-}
-
-fn protection(path: &Path) -> Option<ProtectedFile> {
-    let meta = std::fs::metadata(path).ok()?;
-    if !meta.is_file() {
-        return None;
-    }
-    Some(ProtectedFile {
-        path: path.to_path_buf(),
-        size: meta.len(),
-        modified: meta.modified().ok()?,
-    })
-}
-
-fn unchanged(file: &ProtectedFile) -> bool {
-    protection(&file.path)
-        .map(|now| now.size == file.size && now.modified == file.modified)
-        .unwrap_or(false)
-}
-
-fn protect_restored(path: &Path, files: &mut Vec<ProtectedFile>) {
-    if let Some(file) = protection(path) {
-        files.retain(|old| !oplog::paths_equal(&old.path, path));
-        files.push(file);
-    } else if path.is_dir() {
-        if let Ok(entries) = std::fs::read_dir(path) {
-            for entry in entries.flatten() {
-                if !entry.file_type().map(|t| t.is_symlink()).unwrap_or(true) {
-                    protect_restored(&entry.path(), files);
-                }
-            }
-        }
-    }
 }
 
 fn protect_failed_archives(state: &AppState, records: &[OpRecord]) {
@@ -78,6 +38,23 @@ fn protect_failed_archives(state: &AppState, records: &[OpRecord]) {
     {
         for path in &record.restored_sources {
             protect_restored(Path::new(path), &mut skip);
+        }
+    }
+    save_skip_list(&state.skip_list_path, &skip);
+}
+
+fn protect_organized_directories(state: &AppState, records: &[OpRecord]) {
+    let mut skip = state.recently_undone.lock().unwrap();
+    for record in records
+        .iter()
+        .filter(|r| r.is_directory && r.error.is_none())
+    {
+        // A copy leaves its source in place; a rename leaves a new matching name.
+        // Protect completed objects until they change, preventing event feedback.
+        if record.kind == "copy" {
+            protect_restored(Path::new(&record.src), &mut skip);
+        } else if let Some(dest) = &record.dest {
+            protect_restored(Path::new(dest), &mut skip);
         }
     }
     save_skip_list(&state.skip_list_path, &skip);
@@ -233,8 +210,14 @@ fn apply_rule_inner(
             .iter()
             .any(|source| oplog::paths_equal(Path::new(source), path))
     });
-    if plan.iter().any(|item| item.archive.is_some()) {
-        let expected = preview_items.ok_or_else(|| "请先预览包更新。".to_string())?;
+    if plan
+        .iter()
+        .any(|item| item.archive.is_some() || item.is_directory)
+        || preview_items
+            .map(|items| items.iter().any(|item| item.is_directory))
+            .unwrap_or(false)
+    {
+        let expected = preview_items.ok_or_else(|| "请先预览整理效果。".to_string())?;
         if serde_json::to_value(&plan).map_err(|e| e.to_string())?
             != serde_json::to_value(expected).map_err(|e| e.to_string())?
         {
@@ -247,6 +230,7 @@ fn apply_rule_inner(
     let batch_id = uuid::Uuid::new_v4().to_string();
     let records = engine::apply_plan(&plan, &batch_id, &rule.id);
     protect_failed_archives(state, &records);
+    protect_organized_directories(state, &records);
     if !records.is_empty() {
         oplog::append_records(&state.oplog_path, &records)
             .map_err(|e| format!("写入日志失败: {}", e))?;
@@ -306,10 +290,16 @@ fn undo_last_inner(state: &AppState, app: &AppHandle) -> Result<usize, String> {
                         path: PathBuf::from(path),
                         size: *size,
                         modified: *modified,
+                        directory_state: None,
                     };
                     if unchanged(&file) {
                         skip.retain(|old| !oplog::paths_equal(&old.path, &file.path));
                         skip.push(file);
+                    }
+                }
+                for path in &r.restored_sources {
+                    if Path::new(path).is_dir() {
+                        protect_restored(Path::new(path), &mut skip);
                     }
                 }
             } else if r.restored_sources.is_empty() {
@@ -394,6 +384,7 @@ fn start_monitoring_inner(state: &AppState, app: &AppHandle) -> bool {
         for (_rule_id, records) in &results {
             total += records.len();
             protect_failed_archives(app_state.inner(), records);
+            protect_organized_directories(app_state.inner(), records);
             let _ = oplog::append_records(&oplog_path, records);
             if let Some(message) = records
                 .iter()
@@ -408,7 +399,22 @@ fn start_monitoring_inner(state: &AppState, app: &AppHandle) -> bool {
         total
     });
 
-    let handle = watcher::start_watching(folders, callback);
+    let rules = state.store.lock().unwrap().all();
+    let modes = folders
+        .into_iter()
+        .map(|folder| {
+            let recursive = rules.iter().any(|rule| {
+                rule.enabled
+                    && rule.target_kind == rules::TargetKind::Directory
+                    && rule
+                        .watch_folders
+                        .iter()
+                        .any(|source| oplog::paths_equal(Path::new(source), &folder))
+            });
+            (folder, recursive)
+        })
+        .collect();
+    let handle = watcher::start_watching_with_modes(modes, callback);
     *state.watcher.lock().unwrap() = Some(handle);
     *state.monitoring.lock().unwrap() = true;
     true
@@ -577,6 +583,7 @@ pub fn run() {
                                     path: PathBuf::from(path),
                                     size: *size,
                                     modified: *modified,
+                                    directory_state: None,
                                 };
                                 if unchanged(&file) {
                                     skip.retain(|old| !oplog::paths_equal(&old.path, &file.path));

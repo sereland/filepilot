@@ -45,13 +45,25 @@ pub type ApplyCallback = Box<dyn Fn(&Path) -> usize + Send + 'static>;
 
 /// 启动监控线程，监听 folders。返回 handle，drop/shutdown 可停止。
 pub fn start_watching(folders: Vec<PathBuf>, on_settled: ApplyCallback) -> WatchHandle {
+    start_watching_with_modes(
+        folders.into_iter().map(|path| (path, false)).collect(),
+        on_settled,
+    )
+}
+
+/// Directory rules need nested events; file-only sources retain shallow monitoring.
+pub fn start_watching_with_modes(
+    folders: Vec<(PathBuf, bool)>,
+    on_settled: ApplyCallback,
+) -> WatchHandle {
     let (tx, rx): (Sender<WatchEvent>, Receiver<WatchEvent>) = mpsc::channel();
     let tx_clone = tx.clone();
+    let (ready_tx, ready_rx) = mpsc::channel();
 
     let thread = std::thread::spawn(move || {
         // 每个文件夹一个 debouncer（去重）
         let mut debouncers = HashMap::new();
-        for folder in &folders {
+        for (folder, recursive) in &folders {
             let tx2 = tx_clone.clone();
             let folder2 = folder.clone();
             let handler = move |res: DebounceEventResult| {
@@ -62,7 +74,14 @@ pub fn start_watching(folders: Vec<PathBuf>, on_settled: ApplyCallback) -> Watch
             match new_debouncer(Duration::from_secs(DEBOUNCE_SECS), handler) {
                 Ok(mut d) => {
                     if d.watcher()
-                        .watch(folder, notify::RecursiveMode::NonRecursive)
+                        .watch(
+                            folder,
+                            if *recursive {
+                                notify::RecursiveMode::Recursive
+                            } else {
+                                notify::RecursiveMode::NonRecursive
+                            },
+                        )
                         .is_ok()
                     {
                         debouncers.insert(folder.clone(), d);
@@ -73,6 +92,7 @@ pub fn start_watching(folders: Vec<PathBuf>, on_settled: ApplyCallback) -> Watch
         }
         // debouncers 必须活着，绑定到 _keepalive
         let _keepalive = debouncers;
+        let _ = ready_tx.send(());
 
         // 事件循环
         loop {
@@ -85,6 +105,7 @@ pub fn start_watching(folders: Vec<PathBuf>, on_settled: ApplyCallback) -> Watch
         }
     });
 
+    let _ = ready_rx.recv();
     WatchHandle {
         tx,
         thread: Some(thread),
@@ -146,6 +167,7 @@ mod tests {
             id: "on".into(),
             name: "开".into(),
             enabled: true,
+            target_kind: crate::rules::TargetKind::File,
             watch_folders: vec![dir.to_string_lossy().to_string()],
             conditions: vec![Condition::Extension {
                 exts: vec!["pdf".into()],
@@ -190,6 +212,7 @@ mod tests {
             id: "r".into(),
             name: "规则".into(),
             enabled: true,
+            target_kind: crate::rules::TargetKind::File,
             watch_folders: vec![dir.to_string_lossy().to_string()],
             conditions: vec![Condition::Extension {
                 exts: vec!["pdf".into()],

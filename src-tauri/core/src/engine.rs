@@ -6,7 +6,7 @@
 //! - 删除动作一律走回收站，绝不彻底删除。
 
 use crate::oplog::OpRecord;
-use crate::rules::{Action, ArchiveRetention, FileMeta, Rule};
+use crate::rules::{Action, ArchiveRetention, FileMeta, Rule, TargetKind};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -24,12 +24,18 @@ pub struct PlanItem {
     pub kind: String,
     /// 触发的规则名
     pub rule_name: String,
+    #[serde(default)]
+    pub is_directory: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_digest: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub archive: Option<crate::archive::ArchivePlan>,
 }
 
 /// 跳过的文件名后缀（下载中的临时文件）
-const TEMP_SUFFIXES: &[&str] = &[
+pub(crate) const TEMP_SUFFIXES: &[&str] = &[
     ".tmp",
     ".part",
     ".crdownload",
@@ -56,6 +62,10 @@ fn is_settled(meta: &FileMeta) -> bool {
 
 /// 扫描文件夹（非递归），返回可处理的文件元信息
 pub fn scan_folder(folder: &Path) -> Vec<FileMeta> {
+    scan_entries(folder, TargetKind::File)
+}
+
+fn scan_entries(folder: &Path, target: TargetKind) -> Vec<FileMeta> {
     let mut out = Vec::new();
     let entries = match std::fs::read_dir(folder) {
         Ok(e) => e,
@@ -63,14 +73,20 @@ pub fn scan_folder(folder: &Path) -> Vec<FileMeta> {
     };
     for entry in entries.flatten() {
         let path = entry.path();
-        if !path.is_file() {
+        if crate::archive::no_links(&path).is_err()
+            || (target == TargetKind::Directory && !path.is_dir())
+            || (target == TargetKind::File && !path.is_file())
+        {
             continue;
         }
         let meta = match FileMeta::from_path(&path) {
             Ok(m) => m,
             Err(_) => continue,
         };
-        if is_temp_file(&meta.name) || !is_settled(&meta) {
+        if is_temp_file(&meta.name)
+            || !is_settled(&meta)
+            || (meta.is_directory && !crate::directory::settled(&path, QUIET_PERIOD))
+        {
             continue;
         }
         out.push(meta);
@@ -91,13 +107,36 @@ pub fn dry_run_filtered(
     let mut seen = std::collections::HashSet::new();
     let files: Vec<_> = folders
         .iter()
-        .flat_map(|folder| scan_folder(folder))
+        .flat_map(|folder| scan_entries(folder, rule.target_kind))
         .filter(|meta| {
             include(&meta.path)
                 && rule.matches(meta)
                 && seen.insert(crate::oplog::normalize_path(&meta.path))
         })
+        // A destination container inside the source must not itself be organized.
+        .filter(|meta| {
+            !meta.is_directory
+                || !rule.actions.iter().any(|action| match action {
+                    Action::Move { dest } | Action::Copy { dest } => Path::new(dest)
+                        .ancestors()
+                        .any(|ancestor| crate::oplog::paths_equal(ancestor, &meta.path)),
+                    _ => false,
+                })
+        })
         .collect();
+    if rule.target_kind == TargetKind::Directory {
+        return files
+            .iter()
+            .filter_map(|meta| {
+                let action = rule.actions.first()?;
+                let mut item = plan_for_action(action, meta, &rule.name)?;
+                if rule.actions.len() != 1 {
+                    item.error = Some("文件夹整理目前每条规则支持一个动作。".into());
+                }
+                Some(item)
+            })
+            .collect();
+    }
     if let Some(Action::MoveAndExtract { dest, retention }) = rule
         .actions
         .iter()
@@ -121,7 +160,7 @@ pub fn dry_run_filtered(
                 file.modified == meta.modified && archive.expected_state.get(&file.path.to_string_lossy().to_string()) != archive.expected_state.get(&meta.path.to_string_lossy().to_string())
             }) { archive.error = Some("同组 ZIP 的修改时间相同且内容不同，无法确定最新一份；请移走旧包或选择保留全部。".into()); }
             PlanItem { src: meta.path.to_string_lossy().to_string(), action_desc: rule.actions.iter().find(|a| matches!(a, Action::MoveAndExtract { .. })).unwrap().describe(),
-                dest: Some(archive.folder_dest.clone()), kind: "move_extract".into(), rule_name: rule.name.clone(), archive: Some(archive) }
+                dest: Some(archive.folder_dest.clone()), kind: "move_extract".into(), rule_name: rule.name.clone(), is_directory: false, source_digest: None, error: None, archive: Some(archive) }
         }).collect();
     }
     let mut plan = Vec::new();
@@ -136,6 +175,52 @@ pub fn dry_run_filtered(
 }
 
 fn plan_for_action(action: &Action, meta: &FileMeta, rule_name: &str) -> Option<PlanItem> {
+    if meta.is_directory {
+        let (kind, dest) = match action {
+            Action::Move { dest } => ("move", Some(Path::new(dest).join(&meta.name))),
+            Action::Copy { dest } => ("copy", Some(Path::new(dest).join(&meta.name))),
+            Action::Rename { pattern } => {
+                let name = render_rename(pattern, meta);
+                if name == meta.name {
+                    return None;
+                }
+                if !crate::archive::valid_component(&name) {
+                    return Some(PlanItem {
+                        src: meta.path.to_string_lossy().to_string(),
+                        dest: None,
+                        action_desc: action.describe(),
+                        kind: "rename".into(),
+                        rule_name: rule_name.into(),
+                        is_directory: true,
+                        source_digest: None,
+                        error: Some("文件夹名称无效，不能包含路径或特殊字符。".into()),
+                        archive: None,
+                    });
+                }
+                ("rename", Some(meta.path.with_file_name(name)))
+            }
+            Action::MoveToRecycleBin => ("recycle", None),
+            Action::MoveAndExtract { .. } => return None,
+        };
+        let dest = dest.map(|p| crate::directory::unique_destination(&p));
+        let digest = crate::archive::fingerprint(&meta.path);
+        let error = digest.as_ref().err().map(ToString::to_string).or_else(|| {
+            dest.as_ref()
+                .and_then(|p| crate::directory::validate_destination(&meta.path, p).err())
+                .map(|e| e.to_string())
+        });
+        return Some(PlanItem {
+            src: meta.path.to_string_lossy().to_string(),
+            action_desc: action.describe(),
+            dest: dest.map(|p| p.to_string_lossy().to_string()),
+            kind: kind.into(),
+            rule_name: rule_name.into(),
+            is_directory: true,
+            source_digest: digest.ok(),
+            error,
+            archive: None,
+        });
+    }
     let src = meta.path.to_string_lossy().to_string();
     match action {
         Action::Move { dest } | Action::Copy { dest } => {
@@ -151,6 +236,9 @@ fn plan_for_action(action: &Action, meta: &FileMeta, rule_name: &str) -> Option<
                 dest: Some(dest_path.to_string_lossy().to_string()),
                 kind: kind.to_string(),
                 rule_name: rule_name.to_string(),
+                is_directory: false,
+                source_digest: None,
+                error: None,
                 archive: None,
             })
         }
@@ -167,6 +255,9 @@ fn plan_for_action(action: &Action, meta: &FileMeta, rule_name: &str) -> Option<
                 dest: Some(dest_path.to_string_lossy().to_string()),
                 kind: "rename".to_string(),
                 rule_name: rule_name.to_string(),
+                is_directory: false,
+                source_digest: None,
+                error: None,
                 archive: None,
             })
         }
@@ -176,6 +267,9 @@ fn plan_for_action(action: &Action, meta: &FileMeta, rule_name: &str) -> Option<
             dest: None,
             kind: "recycle".to_string(),
             rule_name: rule_name.to_string(),
+            is_directory: false,
+            source_digest: None,
+            error: None,
             archive: None,
         }),
         Action::MoveAndExtract { .. } => None,
@@ -198,10 +292,14 @@ pub fn select_plan_sources(plan: &[PlanItem], selected_sources: &[String]) -> Ve
 
 /// 渲染重命名模板，支持变量 {name} {ext} {date} {datetime}
 pub fn render_rename(pattern: &str, meta: &FileMeta) -> String {
-    let stem = Path::new(&meta.name)
-        .file_stem()
-        .map(|s| s.to_string_lossy().to_string())
-        .unwrap_or_default();
+    let stem = if meta.is_directory {
+        meta.name.clone()
+    } else {
+        Path::new(&meta.name)
+            .file_stem()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_default()
+    };
     let now = chrono::Local::now();
     pattern
         .replace("{name}", &stem)
@@ -215,6 +313,60 @@ pub fn render_rename(pattern: &str, meta: &FileMeta) -> String {
 pub fn apply_plan(plan: &[PlanItem], batch_id: &str, rule_id: &str) -> Vec<OpRecord> {
     let mut records = Vec::new();
     for item in plan {
+        if item.is_directory {
+            let mut record = OpRecord::new(
+                batch_id,
+                rule_id,
+                &item.rule_name,
+                item.kind.clone(),
+                item.src.clone(),
+                item.dest.clone(),
+                None,
+            );
+            record.is_directory = true;
+            record.directory_digest = item.source_digest.clone();
+            let result = (|| -> std::io::Result<()> {
+                if let Some(error) = &item.error {
+                    return Err(std::io::Error::other(error.clone()));
+                }
+                let source = Path::new(&item.src);
+                let expected = item
+                    .source_digest
+                    .as_deref()
+                    .ok_or_else(|| std::io::Error::other("缺少文件夹预览状态。"))?;
+                if !source.is_dir()
+                    || crate::archive::fingerprint(source)? != expected
+                    || !crate::directory::settled(source, QUIET_PERIOD)
+                {
+                    return Err(std::io::Error::other(
+                        "来源文件夹已变化或仍在写入，请稍后重新预览。",
+                    ));
+                }
+                match item.kind.as_str() {
+                    "move" | "rename" => crate::directory::move_to(
+                        source,
+                        Path::new(item.dest.as_ref().unwrap()),
+                        expected,
+                    ),
+                    "copy" => crate::directory::copy_to(
+                        source,
+                        Path::new(item.dest.as_ref().unwrap()),
+                        expected,
+                    ),
+                    "recycle" => {
+                        record.trash_id = crate::oplog::trash_delete_capturing_id(&item.src)?;
+                        Ok(())
+                    }
+                    _ => Err(std::io::Error::other("不支持的文件夹动作。")),
+                }
+            })();
+            if let Err(e) = result {
+                record.error = Some(e.to_string());
+                record.undo_unavailable = Some("未执行成功".into());
+            }
+            records.push(record);
+            continue;
+        }
         if let Some(archive) = &item.archive {
             let mut record = OpRecord::new(
                 batch_id,
@@ -354,6 +506,7 @@ mod tests {
             id: "r1".into(),
             name: "PDF 归档".into(),
             enabled: true,
+            target_kind: crate::rules::TargetKind::File,
             watch_folders: vec![],
             conditions: vec![Condition::Extension {
                 exts: vec!["pdf".into()],
@@ -408,6 +561,7 @@ mod tests {
         let meta = FileMeta {
             path: PathBuf::from("/tmp/截图.png"),
             name: "截图.png".into(),
+            is_directory: false,
             ext: "png".into(),
             size: 10,
             created: None,
@@ -461,6 +615,9 @@ mod tests {
             dest: Some("C:/backup/a.pdf".into()),
             kind: "copy".into(),
             rule_name: "测试".into(),
+            is_directory: false,
+            source_digest: None,
+            error: None,
             archive: None,
         };
         assert!(select_plan_sources(&[item.clone()], &[]).is_empty());
@@ -475,6 +632,9 @@ mod tests {
             dest: Some("C:/backup/a.pdf".into()),
             kind: "copy".into(),
             rule_name: "测试".into(),
+            is_directory: false,
+            source_digest: None,
+            error: None,
             archive: None,
         };
         let mut move_item = copy.clone();

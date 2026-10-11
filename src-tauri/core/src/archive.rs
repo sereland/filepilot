@@ -83,7 +83,7 @@ pub fn package_name(stem: &str) -> String {
 fn key(name: &str) -> String {
     name.to_lowercase()
 }
-fn valid_component(name: &str) -> bool {
+pub(crate) fn valid_component(name: &str) -> bool {
     let reserved = name.split('.').next().unwrap_or("").to_uppercase();
     !name.is_empty()
         && name != "."
@@ -309,7 +309,7 @@ fn read_manifest(path: &Path) -> io::Result<Manifest> {
 }
 
 /// Never follow a symlink/junction, including ancestor directories.
-fn no_links(path: &Path) -> io::Result<()> {
+pub(crate) fn no_links(path: &Path) -> io::Result<()> {
     for part in path.ancestors() {
         match fs::symlink_metadata(part) {
             Ok(md) => {
@@ -413,7 +413,7 @@ fn extract_zip(src: &Path, dest: &Path) -> io::Result<()> {
     Ok(())
 }
 
-fn relocate(from: &Path, to: &Path, expected: &str) -> io::Result<()> {
+pub(crate) fn relocate(from: &Path, to: &Path, expected: &str) -> io::Result<()> {
     no_links(from)?;
     no_links(to)?;
     #[cfg(windows)]
@@ -1044,6 +1044,7 @@ mod tests {
                 id: "zip".into(),
                 name: "ZIP更新".into(),
                 enabled: true,
+                target_kind: crate::rules::TargetKind::File,
                 watch_folders: vec![self.downloads.to_string_lossy().to_string()],
                 conditions: vec![Condition::Extension {
                     exts: vec!["zip".into()],

@@ -48,11 +48,21 @@ pub enum Action {
 }
 
 /// 一条整理规则
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum TargetKind {
+    #[default]
+    File,
+    Directory,
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Rule {
     pub id: String,
     pub name: String,
     pub enabled: bool,
+    #[serde(default)]
+    pub target_kind: TargetKind,
     /// 监控的文件夹（字符串路径）
     pub watch_folders: Vec<String>,
     /// 条件之间为 AND：全部满足才触发
@@ -66,6 +76,7 @@ impl Default for Rule {
             id: String::new(),
             name: String::new(),
             enabled: true,
+            target_kind: TargetKind::File,
             watch_folders: Vec::new(),
             conditions: Vec::new(),
             actions: Vec::new(),
@@ -78,6 +89,7 @@ impl Default for Rule {
 pub struct FileMeta {
     pub path: PathBuf,
     pub name: String,
+    pub is_directory: bool,
     pub ext: String,
     pub size: u64,
     pub created: Option<SystemTime>,
@@ -99,7 +111,8 @@ impl FileMeta {
         Ok(Self {
             path: path.to_path_buf(),
             name,
-            ext,
+            is_directory: md.is_dir(),
+            ext: if md.is_dir() { String::new() } else { ext },
             size: md.len(),
             created: md.created().ok(),
             modified: md.modified().ok(),
@@ -110,13 +123,16 @@ impl FileMeta {
 impl Condition {
     pub fn matches(&self, meta: &FileMeta) -> bool {
         match self {
-            Condition::Extension { exts } => exts
-                .iter()
-                .any(|e| e.trim_start_matches('.').to_lowercase() == meta.ext),
+            Condition::Extension { exts } => {
+                !meta.is_directory
+                    && exts
+                        .iter()
+                        .any(|e| e.trim_start_matches('.').to_lowercase() == meta.ext)
+            }
             Condition::NameContains { keyword } => {
                 meta.name.to_lowercase().contains(&keyword.to_lowercase())
             }
-            Condition::SizeGreaterThan { bytes } => meta.size > *bytes,
+            Condition::SizeGreaterThan { bytes } => !meta.is_directory && meta.size > *bytes,
             Condition::CreatedWithinDays { days } => match meta.created {
                 Some(t) => t
                     .elapsed()
@@ -163,7 +179,9 @@ impl Action {
 
 impl Rule {
     pub fn matches(&self, meta: &FileMeta) -> bool {
-        !self.conditions.is_empty() && self.conditions.iter().all(|c| c.matches(meta))
+        (self.target_kind == TargetKind::Directory) == meta.is_directory
+            && !self.conditions.is_empty()
+            && self.conditions.iter().all(|c| c.matches(meta))
     }
 }
 
@@ -196,6 +214,7 @@ mod tests {
         FileMeta {
             path,
             name: name.to_string(),
+            is_directory: false,
             ext,
             size,
             created,

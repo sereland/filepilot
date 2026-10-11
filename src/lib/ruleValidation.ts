@@ -11,15 +11,18 @@ export function validateRule(rule: Rule): Record<string, string> {
   rule.conditions.forEach((condition, index) => {
     const key = `condition-${index}`;
     if (condition.type === "extension" && !condition.exts.some((ext) => ext.trim().replace(/^\.+/, ""))) errors[key] = "请至少选择一种扩展名。";
-    if (condition.type === "name_contains" && !condition.keyword.trim()) errors[key] = "请输入文件名关键词。";
+    if (condition.type === "name_contains" && !condition.keyword.trim()) errors[key] = rule.target_kind === "directory" ? "请输入文件夹名关键词。" : "请输入文件名关键词。";
     if (condition.type === "size_greater_than" && (!Number.isFinite(condition.bytes) || condition.bytes <= 0)) errors[key] = "文件大小必须大于 0。";
     if (condition.type === "created_within_days" && (!Number.isInteger(condition.days) || condition.days < 1)) errors[key] = "创建天数必须为正整数。";
+    if (rule.target_kind === "directory" && (condition.type === "extension" || condition.type === "size_greater_than")) errors[key] = "文件夹支持名称和创建时间条件。";
   });
   if (!rule.actions.length) errors.actions = "请至少添加一个执行动作。";
+  if (rule.target_kind === "directory" && rule.actions.length > 1) errors.actions = "文件夹整理目前每条规则支持一个动作。";
   rule.actions.forEach((action, index) => {
     if ((action.type === "move" || action.type === "copy" || action.type === "move_and_extract") && !action.dest.trim()) errors[`action-${index}`] = "请选择目标文件夹。";
     if (action.type === "move_and_extract" && rule.actions.length > 1) errors[`action-${index}`] = "移动并解压已包含整个更新流程，请移除其他动作。";
     if (action.type === "rename" && !action.pattern.trim()) errors[`action-${index}`] = "请输入重命名格式。";
+    if (rule.target_kind === "directory" && action.type === "move_and_extract") errors[`action-${index}`] = "移动并解压适用于 ZIP 文件，请选择其他动作。";
   });
   return errors;
 }

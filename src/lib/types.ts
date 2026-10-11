@@ -18,6 +18,7 @@ export interface Rule {
   id: string;
   name: string;
   enabled: boolean;
+  target_kind: "file" | "directory";
   watch_folders: string[];
   conditions: Condition[];
   actions: Action[];
@@ -29,6 +30,9 @@ export interface PlanItem {
   dest: string | null;
   kind: string; // move | copy | rename | recycle
   rule_name: string;
+  is_directory?: boolean;
+  source_digest?: string;
+  error?: string;
   archive?: {
     root: string; retention: "all" | "latest"; archive_dest: string; folder_dest: string;
     obsolete_sources: string[]; old_targets: string[]; cleanup_backup: string | null; error: string | null;
@@ -46,6 +50,7 @@ export interface OpRecord {
   src: string;
   dest: string | null;
   undone: boolean;
+  is_directory?: boolean;
   error?: string; warning?: string; undo_unavailable?: string;
 }
 
@@ -53,6 +58,7 @@ export interface RuleLastRun {
   batch_id: string;
   timestamp: string;
   file_count: number;
+  directory_count?: number;
 }
 
 export const CONDITION_LABELS: Record<Condition["type"], string> = {
@@ -70,16 +76,17 @@ export const ACTION_LABELS: Record<Action["type"], string> = {
   move_and_extract: "移动并解压到",
 };
 
-export function describeCondition(c: Condition): string {
+export function describeCondition(c: Condition, target: Rule["target_kind"] = "file"): string {
+  const name = target === "directory" ? "文件夹" : "文件";
   switch (c.type) {
     case "extension":
       return `扩展名为 ${c.exts.join("、")}`;
     case "name_contains":
-      return `文件名包含「${c.keyword}」`;
+      return `${name}名包含「${c.keyword}」`;
     case "size_greater_than":
       return `文件大于 ${formatBytes(c.bytes)}`;
     case "created_within_days":
-      return `${c.days} 天内创建的文件`;
+      return `${c.days} 天内创建的${name}`;
   }
 }
 
@@ -118,6 +125,7 @@ export function newEmptyRule(): Rule {
     id: "",
     name: "",
     enabled: false,
+    target_kind: "file",
     watch_folders: [],
     conditions: [],
     actions: [],

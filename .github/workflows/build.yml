@@ -29,6 +29,9 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      - name: Test rule editor validation
+        run: npm test
+
       - name: Test rule engine and archive updates
         env:
           FILEPILOT_REQUIRE_SHORT_PATH_TEST: "1"

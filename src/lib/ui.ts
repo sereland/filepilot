@@ -4,6 +4,16 @@ export function uniqueFileCount(items: { src: string }[]) {
   return new Set(items.map((item) => sourceKey(item.src))).size;
 }
 
+export function itemCountLabel(items: { src: string; is_directory?: boolean }[]): string {
+  const sources = new Map(items.map((item) => [sourceKey(item.src), !!item.is_directory]));
+  return countLabel(sources.size, [...sources.values()].filter(Boolean).length);
+}
+
+export function countLabel(total: number, directories = 0): string {
+  const files = total - directories;
+  return directories ? (files ? `${files} 个文件、${directories} 个文件夹` : `${directories} 个文件夹`) : `${files} 个文件`;
+}
+
 export const sourceKey = (src: string) => src.replace(/\//g, "\\").toLowerCase();
 
 export function formatLastRun(timestamp: string, now = new Date()) {

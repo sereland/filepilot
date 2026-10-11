@@ -25,6 +25,10 @@ pub struct OpRecord {
     /// 执行后的实际目标路径（重名加编号后的最终路径）
     pub dest: Option<String>,
     pub undone: bool,
+    #[serde(default)]
+    pub is_directory: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub directory_digest: Option<String>,
     /// 回收站条目 id（仅 recycle，用于撤销时精确恢复）；旧记录为 None
     #[serde(default)]
     pub trash_id: Option<String>,
@@ -62,6 +66,8 @@ impl OpRecord {
             src,
             dest,
             undone: false,
+            is_directory: false,
+            directory_digest: None,
             trash_id,
             archive_manifest: None,
             undo_unavailable: None,
@@ -151,6 +157,7 @@ pub struct RuleLastRun {
     pub batch_id: String,
     pub timestamp: String,
     pub file_count: usize,
+    pub directory_count: usize,
 }
 
 /// 每条规则最近一次实际整理的批次、时间和文件数，不受记录页条数限制影响。
@@ -165,10 +172,13 @@ pub fn rule_last_runs(log_path: &Path) -> std::collections::HashMap<String, Rule
                 batch_id: record.batch_id.clone(),
                 timestamp: record.timestamp.clone(),
                 file_count: 0,
+                directory_count: 0,
             },
         );
     }
     let mut sources: std::collections::HashMap<String, std::collections::HashSet<String>> =
+        std::collections::HashMap::new();
+    let mut directories: std::collections::HashMap<String, std::collections::HashSet<String>> =
         std::collections::HashMap::new();
     for record in records.iter().filter(|r| r.error.is_none()) {
         if last_runs
@@ -176,6 +186,12 @@ pub fn rule_last_runs(log_path: &Path) -> std::collections::HashMap<String, Rule
             .map(|run| run.batch_id == record.batch_id)
             .unwrap_or(false)
         {
+            if record.is_directory {
+                directories
+                    .entry(record.rule_id.clone())
+                    .or_default()
+                    .insert(normalize_path(Path::new(&record.src)));
+            }
             sources
                 .entry(record.rule_id.clone())
                 .or_default()
@@ -184,6 +200,10 @@ pub fn rule_last_runs(log_path: &Path) -> std::collections::HashMap<String, Rule
     }
     for (rule_id, run) in &mut last_runs {
         run.file_count = sources.get(rule_id).map(|files| files.len()).unwrap_or(0);
+        run.directory_count = directories
+            .get(rule_id)
+            .map(|items| items.len())
+            .unwrap_or(0);
     }
     last_runs
 }
@@ -269,6 +289,41 @@ pub fn undo_last_batch(log_path: &Path) -> std::io::Result<Vec<OpRecord>> {
 }
 
 fn undo_one(record: &mut OpRecord) -> std::io::Result<()> {
+    if record.is_directory {
+        if record.kind == "recycle" {
+            return restore_from_trash(record);
+        }
+        let dest = Path::new(
+            record
+                .dest
+                .as_deref()
+                .ok_or_else(|| std::io::Error::other("缺少目标文件夹。"))?,
+        );
+        let digest = record
+            .directory_digest
+            .as_deref()
+            .ok_or_else(|| std::io::Error::other("缺少文件夹校验记录。"))?;
+        if !dest.is_dir() || crate::archive::fingerprint(dest)? != digest {
+            return Err(std::io::Error::other(
+                "目标文件夹已变化，停止撤销以保留当前内容。",
+            ));
+        }
+        match record.kind.as_str() {
+            "move" | "rename" => {
+                let back = crate::directory::unique_destination(Path::new(&record.src));
+                crate::directory::move_to(dest, &back, digest)?;
+                record.restored_sources = vec![back.to_string_lossy().to_string()];
+                return Ok(());
+            }
+            "copy" => {
+                // A complete directory enters Trash, avoiding partial recursive deletion.
+                trash::delete(dest).map_err(|e| std::io::Error::other(e.to_string()))?;
+                record.restored_sources = vec![record.src.clone()];
+                return Ok(());
+            }
+            _ => return Err(std::io::Error::other("不支持的文件夹撤销操作。")),
+        }
+    }
     match record.kind.as_str() {
         "move" | "rename" => {
             let dest =
@@ -1070,6 +1125,9 @@ mod tests {
             dest: None,
             kind: "recycle".into(),
             rule_name: "测试".into(),
+            is_directory: false,
+            source_digest: None,
+            error: None,
             archive: None,
         };
         let log = tmp_log("recycle_id");
