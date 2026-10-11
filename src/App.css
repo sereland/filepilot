@@ -100,8 +100,8 @@ input:hover,select:hover { border-color:var(--soft); }
 .path-token svg { width:13px; height:13px; }
 .card-actions { display:flex; justify-content:flex-end; align-items:center; gap:8px; }
 .rule-last-run { margin-right:auto; min-width:0; color:var(--soft); font-size:11px; }
-.run-link { border:0; border-radius:4px; padding:4px 0; background:transparent; color:var(--brand); text-align:left; }
-.run-link:hover { color:var(--brand); text-decoration:underline; text-underline-offset:3px; }
+.run-link { border:0; border-radius:4px; padding:4px 0; background:transparent; color:var(--muted); text-align:left; }
+.run-link:hover,.run-link:focus-visible { color:var(--brand); text-decoration:underline; text-underline-offset:3px; }
 .more { position:relative; }
 .more > summary { display:grid; place-items:center; width:28px; height:28px; border-radius:4px; color:var(--muted); cursor:pointer; list-style:none; }
 .more > summary::-webkit-details-marker { display:none; }
