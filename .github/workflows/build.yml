@@ -30,6 +30,8 @@ jobs:
         run: npm ci
 
       - name: Test rule engine and archive updates
+        env:
+          FILEPILOT_REQUIRE_SHORT_PATH_TEST: "1"
         run: |
           $taskExplorerKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced'
           $taskOriginalSetting = (Get-ItemProperty -Path $taskExplorerKey -ErrorAction SilentlyContinue).HideFileExt

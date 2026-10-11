@@ -532,8 +532,13 @@ fn restore_from_trash(_record: &OpRecord) -> std::io::Result<()> {
     ))
 }
 
-/// 路径归一化后比较：去 verbatim 前缀、统一分隔符、Windows 下不区分大小写
+/// Windows 短名/长名、verbatim 前缀、分隔符与大小写统一后比较。
+/// 文件已进入回收站时，规范化仍存在的祖先，再接回缺失的文件名。
 pub fn normalize_path(p: &Path) -> String {
+    #[cfg(windows)]
+    let resolved = resolve_comparison_path(p);
+    #[cfg(windows)]
+    let p = resolved.as_path();
     let mut s = p.as_os_str().to_string_lossy().replace('/', "\\");
     #[cfg(target_os = "windows")]
     {
@@ -545,6 +550,30 @@ pub fn normalize_path(p: &Path) -> String {
         s = rest.to_string();
     }
     s
+}
+
+#[cfg(windows)]
+fn resolve_comparison_path(path: &Path) -> std::path::PathBuf {
+    if !path.is_absolute() {
+        return path.to_path_buf();
+    }
+    let mut current = path;
+    let mut missing = Vec::new();
+    loop {
+        if let Ok(mut resolved) = std::fs::canonicalize(current) {
+            for component in missing.iter().rev() {
+                resolved.push(component);
+            }
+            return resolved;
+        }
+        match (current.parent(), current.file_name()) {
+            (Some(parent), Some(name)) => {
+                missing.push(name.to_os_string());
+                current = parent;
+            }
+            _ => return path.to_path_buf(),
+        }
+    }
 }
 
 pub fn paths_equal(a: &Path, b: &Path) -> bool {
@@ -598,6 +627,87 @@ mod tests {
         let p = std::env::temp_dir().join(format!("filepilot_oplog_{}.jsonl", name));
         let _ = fs::remove_file(&p);
         p
+    }
+
+    #[cfg(windows)]
+    fn short_path(path: &Path) -> std::path::PathBuf {
+        use std::os::windows::ffi::{OsStrExt, OsStringExt};
+        use windows::core::PCWSTR;
+        use windows::Win32::Storage::FileSystem::GetShortPathNameW;
+        let input: Vec<u16> = path
+            .as_os_str()
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
+        let required = unsafe { GetShortPathNameW(PCWSTR(input.as_ptr()), None) };
+        assert!(
+            required > 0,
+            "读取测试目录短名失败：{}",
+            std::io::Error::last_os_error()
+        );
+        let mut buffer = vec![0u16; required as usize];
+        let written = unsafe { GetShortPathNameW(PCWSTR(input.as_ptr()), Some(&mut buffer)) };
+        assert!(written > 0 && written < required);
+        std::path::PathBuf::from(std::ffi::OsString::from_wide(&buffer[..written as usize]))
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn recycle_undo_matches_short_and_long_parent_paths() {
+        let dir = std::env::temp_dir().join(format!(
+            "filepilot_long_path_regression_{}",
+            uuid::Uuid::new_v4()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        let long_dir = fs::canonicalize(&dir).unwrap();
+        let short_dir = short_path(&long_dir);
+        let has_alias = long_dir.as_os_str().to_string_lossy().to_lowercase()
+            != short_dir.as_os_str().to_string_lossy().to_lowercase();
+        if !has_alias {
+            fs::remove_dir_all(&dir).unwrap();
+            assert!(
+                std::env::var("FILEPILOT_REQUIRE_SHORT_PATH_TEST")
+                    .ok()
+                    .as_deref()
+                    != Some("1"),
+                "测试卷未提供 8.3 短名，请在支持短名的临时目录运行此测试"
+            );
+            eprintln!("本卷未提供 8.3 短名；短路径回收站回归未执行");
+            return;
+        }
+        for capture_id in [false, true] {
+            let src = dir.join("original-setup.exe");
+            let short_src = short_dir.join("original-setup.exe");
+            fs::write(&src, "short path fixture").unwrap();
+            assert!(paths_equal(&src, &short_src), "删除前应匹配长短路径");
+            let id = trash_delete_capturing_id(short_src.to_str().unwrap()).unwrap();
+            assert!(id.is_some(), "短路径删除也必须捕获原文件条目 id");
+            assert!(
+                paths_equal(&long_dir.join("original-setup.exe"), &short_src),
+                "删除后应通过仍存在的父目录匹配"
+            );
+            let record = OpRecord::new(
+                "b",
+                "r",
+                "测试",
+                "recycle".into(),
+                short_src.to_string_lossy().to_string(),
+                None,
+                if capture_id { id } else { None },
+            );
+            restore_from_trash(&record).unwrap();
+            assert_eq!(fs::read_to_string(&src).unwrap(), "short path fixture");
+            fs::remove_file(src).unwrap();
+        }
+        assert!(paths_equal(
+            &long_dir.join("missing/nested/file.zip"),
+            &short_dir.join("missing/nested/file.zip")
+        ));
+        assert!(!paths_equal(
+            &long_dir.join("missing/a.zip"),
+            &short_dir.join("missing/b.zip")
+        ));
+        fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
