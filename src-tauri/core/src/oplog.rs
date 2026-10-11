@@ -956,7 +956,9 @@ mod tests {
         ));
         fs::create_dir_all(&dir).unwrap();
         // Shell hides .lnk even when Explorer is configured to show extensions.
-        let src = dir.join("filepilot-regression.lnk");
+        // Exercise Shell's long-path metadata against a short-path source even
+        // when the test process itself has a long TEMP path.
+        let src = short_path(&dir).join("filepilot-regression.lnk");
         fs::write(&src, "test payload; never executed").unwrap();
         let id = trash_delete_capturing_id(src.to_str().unwrap()).unwrap();
         let mut items = trash::os_limited::list().unwrap();
@@ -967,13 +969,16 @@ mod tests {
         item.name = "filepilot-regression".into();
         // Explicitly simulate a hidden display name even on this machine's settings.
         accurate_recycle_names(&mut items).unwrap();
-        assert_eq!(
-            items
-                .iter()
-                .find(|item| Some(item.id.to_string_lossy().as_ref()) == id.as_deref())
-                .unwrap()
-                .original_path(),
-            src
+        let original_path = items
+            .iter()
+            .find(|item| Some(item.id.to_string_lossy().as_ref()) == id.as_deref())
+            .unwrap()
+            .original_path();
+        // The parent can use a long or 8.3 name; the full filename must be exact.
+        assert_eq!(original_path.file_name(), src.file_name());
+        assert!(
+            paths_equal(&original_path, &src),
+            "回收站原路径应指向来源文件：{original_path:?} / {src:?}"
         );
         let record = OpRecord::new(
             "b",
