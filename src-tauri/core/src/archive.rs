@@ -243,7 +243,12 @@ fn write_json(path: &Path, value: &impl Serialize) -> io::Result<()> {
     file.write_all(&bytes)?;
     file.sync_all()?;
     drop(file);
-    fs::rename(&temp, path)
+    fs::rename(&temp, path).map_err(|e| {
+        io::Error::new(
+            e.kind(),
+            format!("写入更新状态失败：{}（{e}）", path.display()),
+        )
+    })
 }
 
 fn read_manifest(path: &Path) -> io::Result<Manifest> {
@@ -424,7 +429,13 @@ pub(crate) fn relocate(from: &Path, to: &Path, expected: &str) -> io::Result<()>
     if fingerprint(from)? != expected {
         return Err(fail(format!("文件已变化：{}", from.display())));
     }
-    fs::create_dir_all(to.parent().unwrap())?;
+    let parent = to.parent().unwrap();
+    fs::create_dir_all(parent).map_err(|e| {
+        io::Error::new(
+            e.kind(),
+            format!("创建目标目录失败：{}（{e}）", parent.display()),
+        )
+    })?;
     match fs::rename(from, to) {
         Ok(()) => Ok(()),
         Err(original) if from.is_file() => {
@@ -441,7 +452,7 @@ pub(crate) fn relocate(from: &Path, to: &Path, expected: &str) -> io::Result<()>
             fs::remove_file(from)
                 .map_err(|e| fail(format!("移动源文件失败：{e}；原错误：{original}")))
         }
-        Err(e) => Err(e),
+        Err(e) => Err(io::Error::new(e.kind(), format!("移动文件夹失败：{} → {}（{e}）；请关闭该文件夹及子文件夹的窗口、预览或解压工具后重新预览并执行。", from.display(), to.display()))),
     }
 }
 
@@ -450,6 +461,12 @@ fn ensure_not_in_use(path: &Path) -> io::Result<()> {
     use std::os::windows::fs::OpenOptionsExt;
     no_links(path)?;
     if path.is_dir() {
+        // Windows refuses to rename a parent tree with an open descendant
+        // directory, even when that handle allows DELETE sharing. Checking only
+        // files misses Explorer/picker/working-directory handles.
+        File::options().access_mode(1).share_mode(0)
+            .custom_flags(0x02000000).open(path)
+            .map_err(|e| fail(format!("文件夹被占用或无法访问：{}（{e}）；请关闭该文件夹的窗口、预览或解压工具后重新预览并执行。", path.display())))?;
         for entry in fs::read_dir(path)? {
             ensure_not_in_use(&entry?.path())?;
         }
@@ -1570,5 +1587,59 @@ mod tests {
         );
         assert!(src.exists());
         drop(locked);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn archive_open_child_directory_reports_the_blocking_path() {
+        use std::os::windows::fs::OpenOptionsExt;
+        let f = Fixture::new();
+        let first = f.zip("filepilot.zip", &[("msi/setup.msi", "old")]);
+        let previous = f.run(&first, ArchiveRetention::Latest).unwrap();
+        let child = f.target.join("filepilot/msi");
+        // A directory viewer may allow DELETE sharing. An open descendant still
+        // prevents Windows from moving its parent tree, even with all files closed.
+        let opened = File::options()
+            .read(true)
+            .share_mode(7)
+            .custom_flags(0x02000000)
+            .open(&child)
+            .unwrap();
+        let source = f.zip("filepilot(1).zip", &[("msi/setup.msi", "new")]);
+        let error = f
+            .run(&source, ArchiveRetention::Latest)
+            .unwrap_err()
+            .to_string();
+        eprintln!("open descendant directory: {error}");
+        assert_eq!(
+            fs::read_to_string(f.target.join("filepilot/msi/setup.msi")).unwrap(),
+            "old"
+        );
+        assert!(source.exists());
+        assert!(undo_reason(&previous).is_none());
+        assert!(f.recycled.borrow().is_empty());
+        let reported = error
+            .split_once("文件夹被占用或无法访问：")
+            .expect("错误应标明目录占用")
+            .1
+            .split('（')
+            .next()
+            .unwrap();
+        assert!(
+            crate::oplog::paths_equal(Path::new(reported), &child),
+            "错误应指向被占用的子目录：{error}"
+        );
+        drop(opened);
+        let current = f.run(&source, ArchiveRetention::Latest).unwrap();
+        assert_eq!(
+            fs::read_to_string(f.target.join("filepilot/msi/setup.msi")).unwrap(),
+            "new"
+        );
+        undo(&current).unwrap();
+        assert_eq!(
+            fs::read_to_string(f.target.join("filepilot/msi/setup.msi")).unwrap(),
+            "old"
+        );
+        assert!(source.exists());
     }
 }
