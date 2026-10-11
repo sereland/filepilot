@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "test": "node --test tests/rule-validation.test.mjs",
+    "test": "node --test tests/rule-validation.test.mjs tests/execution-summary.test.mjs",
     "preview": "vite preview",
     "tauri": "tauri"
   },

@@ -1,10 +1,12 @@
 import { listen } from "@tauri-apps/api/event";
 import { isTauri } from "@tauri-apps/api/core";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import "./App.css";
 import { IconBrand, IconCheck, IconHistory, IconLayers, IconSettings, IconTemplate, IconX } from "./components/icons";
 import RuleEditor from "./components/RuleEditor";
 import MonitoringStatus from "./components/MonitoringStatus";
+import RecentExecution from "./components/RecentExecution";
+import { summarizeExecution, type ExecutionSummary } from "./lib/executionSummary";
 import { api } from "./lib/api";
 import { preventAppContextMenu } from "./lib/contextMenu";
 import { initTheme } from "./lib/theme";
@@ -23,6 +25,8 @@ export default function App() {
   const [rules, setRules] = useState<Rule[]>([]);
   const [records, setRecords] = useState<OpRecord[]>([]);
   const [lastRuns, setLastRuns] = useState<Record<string, RuleLastRun> | null>(null);
+  const [latestExecution, setLatestExecution] = useState<ExecutionSummary | null>();
+  const reloadGeneration = useRef(0);
   const [logTarget, setLogTarget] = useState<{ batchId: string; requestId: number } | null>(null);
   const [monitoring, setMonitoring] = useState(false);
   const [monitorBusy, setMonitorBusy] = useState(false);
@@ -39,11 +43,22 @@ export default function App() {
   }, [notice]);
 
   const reload = useCallback(async () => {
-    if (!isTauri()) return;
+    if (!isTauri()) { setLatestExecution(null); return; }
+    const generation = ++reloadGeneration.current;
     try {
       const [nextRules, nextRecords, running, nextLastRuns] = await Promise.all([api.getRules(), api.getOplog(100), api.isMonitoring(), api.getRuleLastRuns()]);
+      if (generation !== reloadGeneration.current) return;
       setRules(nextRules); setRecords(nextRecords); setMonitoring(running); setLastRuns(nextLastRuns);
-    } catch (e) { notify("无法加载应用数据：" + String(e), { error: true }); }
+      try {
+        const batch = nextRecords[0] ? await api.getOplogBatch(nextRecords[0].batch_id) : [];
+        if (generation === reloadGeneration.current) setLatestExecution(summarizeExecution(batch));
+      } catch (e) {
+        if (generation === reloadGeneration.current) {
+          setLatestExecution(undefined);
+          notify("无法加载最近整理记录：" + String(e), { error: true });
+        }
+      }
+    } catch (e) { if (generation === reloadGeneration.current) notify("无法加载应用数据：" + String(e), { error: true }); }
   }, [notify]);
   useEffect(() => {
     if (!isTauri()) return;
@@ -88,14 +103,17 @@ export default function App() {
     setTab("oplog");
   }, []);
   const nav: { tab: Tab; label: string; icon: typeof IconLayers }[] = [
-    { tab: "rules", label: "整理规则", icon: IconLayers }, { tab: "templates", label: "规则模板", icon: IconTemplate },
-    { tab: "oplog", label: "操作记录", icon: IconHistory }, { tab: "settings", label: "设置", icon: IconSettings },
+    { tab: "rules", label: "整理规则", icon: IconLayers }, { tab: "oplog", label: "操作记录", icon: IconHistory },
+    { tab: "templates", label: "规则模板", icon: IconTemplate }, { tab: "settings", label: "设置", icon: IconSettings },
   ];
   return <div className="app">
     <aside className="sidebar">
       <div className="brand"><span className="brand-tile"><IconBrand /></span><span className="brand-name">FilePilot</span></div>
       <nav aria-label="主导航">{nav.map((item) => <button key={item.tab} className={"nav-item" + (tab === item.tab ? " active" : "")} aria-current={tab === item.tab ? "page" : undefined} onClick={() => { if (item.tab === "oplog") showLogs(); else setTab(item.tab); }}><item.icon />{item.label}</button>)}</nav>
-      <div className="sidebar-footer"><MonitoringStatus monitoring={monitoring} active={active} busy={monitorBusy} error={monitorError} onToggle={() => { void toggleMonitoring(); }} onCheckRules={() => { setTab("rules"); setMonitorError(""); }} /></div>
+      <div className="sidebar-footer"><div className="sidebar-status-panel">
+        <RecentExecution summary={latestExecution} onOpen={showLogs} />
+        <MonitoringStatus monitoring={monitoring} active={active} busy={monitorBusy} error={monitorError} onToggle={() => { void toggleMonitoring(); }} onCheckRules={() => { setTab("rules"); setMonitorError(""); }} />
+      </div></div>
     </aside>
     <main className={"content" + (tab === "rules" || tab === "oplog" ? " content-fixed" : "")}>
       {tab === "rules" && <RulesView rules={rules} lastRuns={lastRuns} monitoring={monitoring} onReload={reload} onEdit={setEditing} onTemplates={() => setTab("templates")} onLogs={showLogs} notify={notify} />}

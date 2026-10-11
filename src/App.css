@@ -34,6 +34,18 @@ input:hover,select:hover { border-color:var(--soft); }
 .nav-item:hover { background:var(--hover); }
 .nav-item.active { background:var(--tint); color:var(--brand); font-weight:600; }
 .sidebar-footer { margin-top:auto; padding-top:24px; }
+.sidebar-status-panel { border:1px solid var(--line); border-radius:8px; background:var(--surface); overflow:hidden; }
+.recent-run { display:block; width:100%; padding:12px; text-align:left; color:var(--ink); border:0; background:transparent; }
+.recent-run-link:hover { background:var(--hover); }
+.recent-run-header { display:flex; justify-content:space-between; align-items:baseline; gap:6px; }
+.recent-run-heading, .recent-run-time { font-size:11px; color:var(--muted); }
+.recent-run-time { text-align:right; }
+.recent-run-name { display:block; margin:7px 0 6px; font-size:12px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.recent-run-link:hover .recent-run-name { color:var(--brand); }
+.recent-run-meta { display:flex; align-items:center; flex-wrap:wrap; gap:5px; font-size:11px; color:var(--muted); }
+.recent-run-status { padding:1px 4px; border-radius:3px; background:var(--hover); font-size:10px; }
+.recent-run-status.failure { color:var(--danger); }
+.sidebar-status-panel .monitor-card { border:0; border-top:1px solid var(--line); border-radius:0; background:transparent; }
 .monitor-card { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:10px; border:1px solid var(--line); border-radius:8px; padding:12px; background:var(--surface); }
 .monitor-title { font-size:13px; font-weight:600; }
 .monitor-state { display:flex; align-items:center; gap:6px; margin-top:3px; color:var(--muted); font-size:11px; }

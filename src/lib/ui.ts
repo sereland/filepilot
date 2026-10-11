@@ -17,14 +17,18 @@ export function countLabel(total: number, directories = 0): string {
 export const sourceKey = (src: string) => src.replace(/\//g, "\\").toLowerCase();
 
 export function formatLastRun(timestamp: string, now = new Date()) {
+  return "上次整理：" + formatExecutionTime(timestamp, now);
+}
+
+export function formatExecutionTime(timestamp: string, now = new Date()) {
   const date = new Date(timestamp);
-  if (!Number.isFinite(date.getTime())) return "上次整理：时间未知";
+  if (!Number.isFinite(date.getTime())) return "时间未知";
   const sameDay = (day: Date) => date.getFullYear() === day.getFullYear() && date.getMonth() === day.getMonth() && date.getDate() === day.getDate();
   const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
   const time = new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false }).format(date);
-  if (sameDay(now)) return "上次整理：今天 " + time;
-  if (sameDay(yesterday)) return "上次整理：昨天 " + time;
-  return "上次整理：" + new Intl.DateTimeFormat("zh-CN", {
+  if (sameDay(now)) return "今天 " + time;
+  if (sameDay(yesterday)) return "昨天 " + time;
+  return new Intl.DateTimeFormat("zh-CN", {
     year: date.getFullYear() !== now.getFullYear() ? "numeric" : undefined,
     month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false,
   }).format(date);
