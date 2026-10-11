@@ -111,8 +111,8 @@ export default function App() {
       <div className="brand"><span className="brand-tile"><IconBrand /></span><span className="brand-name">FilePilot</span></div>
       <nav aria-label="主导航">{nav.map((item) => <button key={item.tab} className={"nav-item" + (tab === item.tab ? " active" : "")} aria-current={tab === item.tab ? "page" : undefined} onClick={() => { if (item.tab === "oplog") showLogs(); else setTab(item.tab); }}><item.icon />{item.label}</button>)}</nav>
       <div className="sidebar-footer"><div className="sidebar-status-panel">
-        <RecentExecution summary={latestExecution} onOpen={showLogs} />
         <MonitoringStatus monitoring={monitoring} active={active} busy={monitorBusy} error={monitorError} onToggle={() => { void toggleMonitoring(); }} onCheckRules={() => { setTab("rules"); setMonitorError(""); }} />
+        <RecentExecution summary={latestExecution} onOpen={showLogs} />
       </div></div>
     </aside>
     <main className={"content" + (tab === "rules" || tab === "oplog" ? " content-fixed" : "")}>
