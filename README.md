@@ -55,6 +55,8 @@ npm run tauri dev        # 需要 Rust 工具链 + 系统依赖
 
 支持“移动并解压到”：普通 ZIP 可保留全部，也可把浏览器下载编号的同组包更新为最新一份，保留上一版供整包撤销。使用与边界见 [压缩包更新设计](design/ARCHIVE_UPDATE.md)。
 
+规则支持全部 / 任一 / 排除条件组，名称比较、文件大小区间和创建 / 修改时间条件。移动与复制支持年月、扩展名等子文件夹模板，重命名可采用文件修改日期；普通文件可连续重命名再移动，按整个流程预览、选择和撤销。使用示例、兼容性及时间条件的触发边界见 [复杂规则设计](design/ADVANCED_RULES.md)。
+
 规则可选择整理“文件”或“文件夹”。文件夹按名称或创建时间匹配，支持同盘整目录移动、复制（可跨盘）、重命名和回收站，遇到同名加编号保留，可预览和撤销。目前每条文件夹规则支持一个动作，不自动替换目录版本；使用与边界见 [目录整理设计](design/DIRECTORY_ORGANIZATION.md)。运行 `npm test` 检查规则编辑器校验，运行 `cargo test --locked --manifest-path src-tauri/core/Cargo.toml -- --test-threads=1` 检查核心操作（需系统回收站支持）。
 
 Windows 安装包由 GitHub Actions 自动构建（见 `.github/workflows/build.yml`），每次打 tag 自动发布到 Releases。

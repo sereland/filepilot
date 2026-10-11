@@ -4,14 +4,23 @@ export type Condition =
   | { type: "extension"; exts: string[] }
   | { type: "name_contains"; keyword: string }
   | { type: "size_greater_than"; bytes: number }
-  | { type: "created_within_days"; days: number };
+  | { type: "created_within_days"; days: number }
+  | { type: "name_match"; operator: "contains" | "not_contains" | "equals" | "starts_with" | "ends_with"; keyword: string }
+  | { type: "size_less_than"; bytes: number }
+  | { type: "size_between"; min: number; max: number }
+  | { type: "date_match"; field: "created" | "modified"; operator: "within_days" | "older_than_days"; days: number }
+  | { type: "group"; mode: "all" | "any"; negate: boolean; conditions: Condition[] };
+
+export type DateSource = "now" | "created" | "modified";
 
 export type Action =
   | { type: "move"; dest: string }
   | { type: "copy"; dest: string }
   | { type: "rename"; pattern: string }
   | { type: "move_to_recycle_bin" }
-  | { type: "move_and_extract"; dest: string; retention: "all" | "latest" };
+  | { type: "move_and_extract"; dest: string; retention: "all" | "latest" }
+  | { type: "organize"; operation: "move" | "copy"; dest: string; subfolder: string; date_source: DateSource }
+  | { type: "rename_with_date"; pattern: string; date_source: DateSource };
 // A package update includes movement, extraction and its undo backup.
 
 export interface Rule {
@@ -26,6 +35,7 @@ export interface Rule {
 
 export interface PlanItem {
   src: string;
+  input_src?: string;
   action_desc: string;
   dest: string | null;
   kind: string; // move | copy | rename | recycle
@@ -48,6 +58,7 @@ export interface OpRecord {
   rule_name: string;
   kind: string;
   src: string;
+  origin_src?: string;
   dest: string | null;
   undone: boolean;
   is_directory?: boolean;
@@ -66,6 +77,7 @@ export const CONDITION_LABELS: Record<Condition["type"], string> = {
   name_contains: "文件名包含",
   size_greater_than: "文件大小",
   created_within_days: "创建时间",
+  name_match: "名称", size_less_than: "文件大小", size_between: "文件大小区间", date_match: "文件时间", group: "条件组",
 };
 
 export const ACTION_LABELS: Record<Action["type"], string> = {
@@ -74,6 +86,7 @@ export const ACTION_LABELS: Record<Action["type"], string> = {
   rename: "重命名",
   move_to_recycle_bin: "移入回收站",
   move_and_extract: "移动并解压到",
+  organize: "按模板归档", rename_with_date: "按文件日期重命名",
 };
 
 export function describeCondition(c: Condition, target: Rule["target_kind"] = "file"): string {
@@ -87,6 +100,11 @@ export function describeCondition(c: Condition, target: Rule["target_kind"] = "f
       return `文件大于 ${formatBytes(c.bytes)}`;
     case "created_within_days":
       return `${c.days} 天内创建的${name}`;
+    case "name_match": return `${name}名${({contains:"包含",not_contains:"不包含",equals:"等于",starts_with:"开头是",ends_with:"结尾是"})[c.operator]}「${c.keyword}」`;
+    case "size_less_than": return `文件小于 ${formatBytes(c.bytes)}`;
+    case "size_between": return `文件大小 ${formatBytes(c.min)} 至 ${formatBytes(c.max)}`;
+    case "date_match": return `${c.field === "created" ? "创建" : "修改"}时间${c.operator === "within_days" ? "在最近" : "距今至少"} ${c.days} 天`;
+    case "group": return `${c.negate ? "排除" : ""}（${c.conditions.map(child=>describeCondition(child,target)).join(c.mode === "all" ? " 且 " : " 或 ")}）`;
   }
 }
 
@@ -102,7 +120,16 @@ export function describeAction(a: Action): string {
       return "移入回收站";
     case "move_and_extract":
       return `移动并解压到 ${a.dest}（${a.retention === "latest" ? "只保留最新一份" : "保留全部"}）`;
+    case "organize": return `${a.operation === "move" ? "移动到" : "复制到"} ${a.dest}${a.subfolder ? "/"+a.subfolder : ""}（按${dateSourceLabel(a.date_source)}）`;
+    case "rename_with_date": return `重命名为 ${a.pattern}（按${dateSourceLabel(a.date_source)}）`;
   }
+}
+
+export function dateSourceLabel(source: DateSource) { return { now:"执行日期", created:"创建日期", modified:"修改日期" }[source]; }
+
+export function directoryConditions(conditions: Condition[]): Condition[] {
+  return conditions.map(condition => condition.type === "group" ? { ...condition, conditions:directoryConditions(condition.conditions) } :
+    ["extension","size_greater_than","size_less_than","size_between"].includes(condition.type) ? {type:"name_contains",keyword:""} : condition);
 }
 
 export function formatBytes(bytes: number): string {

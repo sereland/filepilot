@@ -50,7 +50,7 @@ export default function PreviewDialog({ ruleName, items, running, error, onConfi
           <td>{KIND[item.kind] ?? item.kind}</td><td title={item.dest ?? item.action_desc}>{item.dest ?? item.action_desc}</td>
         </tr>)}</Fragment>)}
       </tbody></table></div>
-      <details className="path-details"><summary>查看完整来源与目标路径</summary>{items.map((item, index) => <p key={index}>{item.src}<br />→ {item.dest ?? item.action_desc}</p>)}</details>
+      <details className="path-details"><summary>查看完整来源与目标路径</summary>{items.map((item, index) => <p key={index}>{item.input_src ?? item.src}<br />→ {item.dest ?? item.action_desc}</p>)}</details>
       <p className="hint"><IconShield /><span>{hasArchive ? "先成功解压，再替换旧版。包更新整组撤销；新 ZIP 或解压内容变化后停止撤销。" : hasDirectory ? "文件夹内容变化后会停止撤销；撤销复制会将副本送入回收站。" : hasRecycle ? "回收站中的文件可在系统回收站恢复。" : "操作会记录在日志中，可撤销最近一批整理。"} 自动规则仍按原条件运行。</span></p>
     </>}
     {error && <p className="error" role="alert">{error}</p>}

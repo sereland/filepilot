@@ -14,6 +14,7 @@ dist-ssr
 
 # Local verification artifacts and task-scoped toolchains
 output/
+/src-tauri/core/target/
 
 # Editor directories and files
 .vscode/*

@@ -1,11 +1,11 @@
 export type Notify = (message: string, options?: { error?: boolean; action?: { label: string; onClick: () => void } }) => void;
 
-export function uniqueFileCount(items: { src: string }[]) {
-  return new Set(items.map((item) => sourceKey(item.src))).size;
+export function uniqueFileCount(items: { src: string; origin_src?: string }[]) {
+  return new Set(items.map((item) => sourceKey(item.origin_src ?? item.src))).size;
 }
 
-export function itemCountLabel(items: { src: string; is_directory?: boolean }[]): string {
-  const sources = new Map(items.map((item) => [sourceKey(item.src), !!item.is_directory]));
+export function itemCountLabel(items: { src: string; origin_src?: string; is_directory?: boolean }[]): string {
+  const sources = new Map(items.map((item) => [sourceKey(item.origin_src ?? item.src), !!item.is_directory]));
   return countLabel(sources.size, [...sources.values()].filter(Boolean).length);
 }
 

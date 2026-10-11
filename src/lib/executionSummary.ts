@@ -18,9 +18,9 @@ export function summarizeExecution(records: OpRecord[]): ExecutionSummary | null
   if (!latest) return null;
   const batch = records.filter((record) => record.batch_id === latest.batch_id);
   const completed = batch.filter((record) => !record.error);
-  const sources = new Map(completed.map((record) => [sourceKey(record.src), !!record.is_directory]));
+  const sources = new Map(completed.map((record) => [sourceKey(record.origin_src ?? record.src), !!record.is_directory]));
   const directoryCount = [...sources.values()].filter(Boolean).length;
-  const failedCount = new Set(batch.filter((record) => record.error).map((record) => sourceKey(record.src))).size;
+  const failedCount = new Set(batch.filter((record) => record.error).map((record) => sourceKey(record.origin_src ?? record.src))).size;
   const undoneCount = completed.filter((record) => record.undone).length;
   const status = !completed.length ? "failed" : undoneCount === completed.length ? "undone" :
     undoneCount ? "partial_undo" : failedCount ? "partial_failure" : "completed";

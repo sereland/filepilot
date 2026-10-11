@@ -28,6 +28,7 @@ struct AppState {
     recently_undone: Mutex<Vec<ProtectedFile>>,
     skip_list_path: PathBuf,
     operations: Mutex<()>,
+    preview_times: Mutex<std::collections::HashMap<String, std::time::SystemTime>>,
 }
 
 fn protect_failed_archives(state: &AppState, records: &[OpRecord]) {
@@ -43,20 +44,9 @@ fn protect_failed_archives(state: &AppState, records: &[OpRecord]) {
     save_skip_list(&state.skip_list_path, &skip);
 }
 
-fn protect_organized_directories(state: &AppState, records: &[OpRecord]) {
+fn protect_organized_objects(state: &AppState, records: &[OpRecord]) {
     let mut skip = state.recently_undone.lock().unwrap();
-    for record in records
-        .iter()
-        .filter(|r| r.is_directory && r.error.is_none())
-    {
-        // A copy leaves its source in place; a rename leaves a new matching name.
-        // Protect completed objects until they change, preventing event feedback.
-        if record.kind == "copy" {
-            protect_restored(Path::new(&record.src), &mut skip);
-        } else if let Some(dest) = &record.dest {
-            protect_restored(Path::new(dest), &mut skip);
-        }
-    }
+    filepilot_core::protection::protect_organized(records, &mut skip);
     save_skip_list(&state.skip_list_path, &skip);
 }
 
@@ -70,6 +60,7 @@ impl AppState {
             recently_undone: Mutex::new(load_skip_list(&skip_list_path)),
             skip_list_path,
             operations: Mutex::new(()),
+            preview_times: Mutex::new(std::collections::HashMap::new()),
         }
     }
 }
@@ -105,16 +96,19 @@ fn get_rules(state: State<'_, AppState>) -> Vec<Rule> {
 }
 
 #[tauri::command]
-fn save_rule(state: State<'_, AppState>, app: AppHandle, rule: Rule) -> Rule {
+fn save_rule(state: State<'_, AppState>, app: AppHandle, rule: Rule) -> Result<Rule, String> {
+    rule.validate()?;
     let saved = state.store.lock().unwrap().upsert(rule);
+    state.preview_times.lock().unwrap().remove(&saved.id);
     refresh_monitoring(state.inner(), &app);
-    saved
+    Ok(saved)
 }
 
 #[tauri::command]
 fn delete_rule(state: State<'_, AppState>, app: AppHandle, id: String) -> bool {
     let changed = state.store.lock().unwrap().delete(&id);
     if changed {
+        state.preview_times.lock().unwrap().remove(&id);
         refresh_monitoring(state.inner(), &app);
     }
     changed
@@ -155,6 +149,7 @@ fn open_rule_folder(
             | rules::Action::MoveAndExtract { dest, .. } => {
                 oplog::paths_equal(Path::new(dest), path)
             }
+            rules::Action::Organize { dest, .. } => oplog::paths_equal(Path::new(dest), path),
             _ => false,
         });
     if !allowed {
@@ -180,7 +175,14 @@ async fn preview_rule(app: AppHandle, id: String) -> Result<Vec<engine::PlanItem
             .get(&id)
             .ok_or_else(|| "规则不存在".to_string())?;
         let folders: Vec<PathBuf> = rule.watch_folders.iter().map(PathBuf::from).collect();
-        Ok(engine::dry_run(&rule, &folders))
+        let at = std::time::SystemTime::now();
+        let plan = engine::dry_run_at(&rule, &folders, at);
+        state
+            .preview_times
+            .lock()
+            .unwrap()
+            .insert(rule.id.clone(), at);
+        Ok(plan)
     })
     .await
     .map_err(|e| e.to_string())?
@@ -205,32 +207,17 @@ fn apply_rule_inner(
         .ok_or_else(|| "规则不存在".to_string())?;
 
     let folders: Vec<PathBuf> = rule.watch_folders.iter().map(PathBuf::from).collect();
-    let plan = engine::dry_run_filtered(&rule, &folders, &|path| {
-        selected_sources
-            .iter()
-            .any(|source| oplog::paths_equal(Path::new(source), path))
-    });
-    if plan
-        .iter()
-        .any(|item| item.archive.is_some() || item.is_directory)
-        || preview_items
-            .map(|items| items.iter().any(|item| item.is_directory))
-            .unwrap_or(false)
-    {
-        let expected = preview_items.ok_or_else(|| "请先预览整理效果。".to_string())?;
-        if serde_json::to_value(&plan).map_err(|e| e.to_string())?
-            != serde_json::to_value(expected).map_err(|e| e.to_string())?
-        {
-            return Err("文件或目标内容已变化，请重新预览后再整理。".to_string());
-        }
-    }
+    let at = preview_items
+        .and_then(|_| state.preview_times.lock().unwrap().get(id).copied())
+        .unwrap_or_else(std::time::SystemTime::now);
+    let plan = engine::confirmed_dry_run(&rule, &folders, selected_sources, preview_items, at)?;
     if plan.is_empty() {
         return Ok(Vec::new());
     }
     let batch_id = uuid::Uuid::new_v4().to_string();
     let records = engine::apply_plan(&plan, &batch_id, &rule.id);
     protect_failed_archives(state, &records);
-    protect_organized_directories(state, &records);
+    protect_organized_objects(state, &records);
     if !records.is_empty() {
         oplog::append_records(&state.oplog_path, &records)
             .map_err(|e| format!("写入日志失败: {}", e))?;
@@ -384,7 +371,7 @@ fn start_monitoring_inner(state: &AppState, app: &AppHandle) -> bool {
         for (_rule_id, records) in &results {
             total += records.len();
             protect_failed_archives(app_state.inner(), records);
-            protect_organized_directories(app_state.inner(), records);
+            protect_organized_objects(app_state.inner(), records);
             let _ = oplog::append_records(&oplog_path, records);
             if let Some(message) = records
                 .iter()

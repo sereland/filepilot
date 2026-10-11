@@ -22,6 +22,10 @@ pub struct OpRecord {
     /// move | copy | rename | recycle | move_extract
     pub kind: String,
     pub src: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin_src: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file_digest: Option<String>,
     /// 执行后的实际目标路径（重名加编号后的最终路径）
     pub dest: Option<String>,
     pub undone: bool,
@@ -64,6 +68,8 @@ impl OpRecord {
             rule_name: rule_name.to_string(),
             kind,
             src,
+            origin_src: None,
+            file_digest: None,
             dest,
             undone: false,
             is_directory: false,
@@ -144,6 +150,9 @@ pub fn read_recent(log_path: &Path, limit: usize) -> Vec<OpRecord> {
 }
 
 fn with_undo_state(mut record: OpRecord) -> OpRecord {
+    if record.error.is_some() {
+        record.undo_unavailable = Some("未执行成功".into());
+    }
     if !record.undone {
         if let Some(path) = &record.archive_manifest {
             record.undo_unavailable = crate::archive::undo_reason(path);
@@ -190,12 +199,16 @@ pub fn rule_last_runs(log_path: &Path) -> std::collections::HashMap<String, Rule
                 directories
                     .entry(record.rule_id.clone())
                     .or_default()
-                    .insert(normalize_path(Path::new(&record.src)));
+                    .insert(normalize_path(Path::new(
+                        record.origin_src.as_deref().unwrap_or(&record.src),
+                    )));
             }
             sources
                 .entry(record.rule_id.clone())
                 .or_default()
-                .insert(normalize_path(Path::new(&record.src)));
+                .insert(normalize_path(Path::new(
+                    record.origin_src.as_deref().unwrap_or(&record.src),
+                )));
         }
     }
     for (rule_id, run) in &mut last_runs {
@@ -235,10 +248,36 @@ pub fn undo_last_batch(log_path: &Path) -> std::io::Result<Vec<OpRecord>> {
 
     let mut undone = Vec::new();
     let mut last_error = None;
+    let mut blocked = std::collections::HashSet::new();
+    let origins: std::collections::HashSet<_> = all
+        .iter()
+        .filter(|r| r.batch_id == batch_id && !r.undone && r.error.is_none())
+        .filter_map(|r| r.origin_src.clone())
+        .collect();
+    for origin in origins {
+        let chain: Vec<_> = all
+            .iter()
+            .filter(|r| {
+                r.batch_id == batch_id
+                    && !r.undone
+                    && r.error.is_none()
+                    && r.origin_src.as_deref() == Some(&origin)
+            })
+            .collect();
+        if let Err(error) = validate_undo_chain(&chain, &origin) {
+            blocked.insert(origin);
+            last_error = Some(error);
+        }
+    }
     for record in all.iter_mut().rev() {
         if record.batch_id != batch_id
             || record.undone
             || with_undo_state(record.clone()).undo_unavailable.is_some()
+            || record
+                .origin_src
+                .as_ref()
+                .map(|origin| blocked.contains(origin))
+                .unwrap_or(false)
         {
             continue;
         }
@@ -273,6 +312,9 @@ pub fn undo_last_batch(log_path: &Path) -> std::io::Result<Vec<OpRecord>> {
                 }
                 Err(error) => {
                     last_error = Some(error);
+                    if let Some(origin) = &record.origin_src {
+                        blocked.insert(origin.clone());
+                    }
                 }
             }
         }
@@ -286,6 +328,57 @@ pub fn undo_last_batch(log_path: &Path) -> std::io::Result<Vec<OpRecord>> {
         }
     }
     Ok(undone)
+}
+
+// Check the whole dependency chain before restoring its first file. Existing
+// intermediate paths may belong to someone else and must never be substituted.
+fn validate_undo_chain(records: &[&OpRecord], origin: &str) -> std::io::Result<()> {
+    let mut virtual_paths = std::collections::HashMap::new();
+    for record in records.iter().rev() {
+        if record.kind == "recycle" {
+            virtual_paths.insert(normalize_path(Path::new(&record.src)), true);
+            continue;
+        }
+        let dest = record
+            .dest
+            .as_deref()
+            .ok_or_else(|| std::io::Error::other("缺少连续动作的目标路径。"))?;
+        let dest_key = normalize_path(Path::new(dest));
+        let existed = virtual_paths
+            .get(&dest_key)
+            .copied()
+            .unwrap_or_else(|| Path::new(dest).is_file());
+        if !existed {
+            return Err(std::io::Error::other(format!(
+                "目标已不存在，停止撤销此文件：{dest}"
+            )));
+        }
+        if !virtual_paths.contains_key(&dest_key) {
+            if let Some(digest) = &record.file_digest {
+                if crate::archive::fingerprint(Path::new(dest))? != *digest {
+                    return Err(std::io::Error::other(format!(
+                        "目标内容已变化，停止撤销此文件：{dest}"
+                    )));
+                }
+            }
+        }
+        virtual_paths.insert(dest_key, false);
+        if matches!(record.kind.as_str(), "move" | "rename") {
+            let src_key = normalize_path(Path::new(&record.src));
+            let occupied = virtual_paths
+                .get(&src_key)
+                .copied()
+                .unwrap_or_else(|| Path::new(&record.src).exists());
+            if occupied && !paths_equal(Path::new(&record.src), Path::new(origin)) {
+                return Err(std::io::Error::other(format!(
+                    "中间路径已被占用，停止撤销此文件：{}",
+                    record.src
+                )));
+            }
+            virtual_paths.insert(src_key, true);
+        }
+    }
+    Ok(())
 }
 
 fn undo_one(record: &mut OpRecord) -> std::io::Result<()> {
@@ -331,6 +424,9 @@ fn undo_one(record: &mut OpRecord) -> std::io::Result<()> {
                     std::io::Error::new(std::io::ErrorKind::Other, "missing dest")
                 })?);
             if !dest.exists() {
+                if record.origin_src.is_some() {
+                    return Err(std::io::Error::other("目标已不存在，停止撤销。"));
+                }
                 return Ok(()); // 目标已不在，可能被用户手动处理过，跳过
             }
             let back = unique_back(Path::new(&record.src));
@@ -1126,6 +1222,7 @@ mod tests {
             kind: "recycle".into(),
             rule_name: "测试".into(),
             is_directory: false,
+            input_src: None,
             source_digest: None,
             error: None,
             archive: None,

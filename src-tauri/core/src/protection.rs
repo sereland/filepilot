@@ -47,3 +47,19 @@ pub fn protect_restored(path: &Path, files: &mut Vec<ProtectedFile>) {
         files.push(file);
     }
 }
+
+pub fn protect_organized(records: &[oplog::OpRecord], files: &mut Vec<ProtectedFile>) {
+    for record in records
+        .iter()
+        .filter(|r| r.is_directory || r.origin_src.is_some())
+    {
+        if record.error.is_some() || record.kind == "copy" {
+            protect_restored(Path::new(&record.src), files);
+        }
+        if record.error.is_none() {
+            if let Some(dest) = &record.dest {
+                protect_restored(Path::new(dest), files);
+            }
+        }
+    }
+}

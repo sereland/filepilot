@@ -1,0 +1,19 @@
+{
+  "id": "invoice-example",
+  "name": "发票与收据按月归档",
+  "enabled": false,
+  "target_kind": "file",
+  "watch_folders": ["C:/Downloads"],
+  "conditions": [{"type": "group", "mode": "all", "negate": false, "conditions": [
+    {"type": "extension", "exts": ["pdf"]},
+    {"type": "group", "mode": "any", "negate": false, "conditions": [
+      {"type": "name_match", "operator": "contains", "keyword": "发票"},
+      {"type": "name_match", "operator": "contains", "keyword": "收据"}
+    ]},
+    {"type": "name_match", "operator": "not_contains", "keyword": "草稿"}
+  ]}],
+  "actions": [
+    {"type": "rename_with_date", "pattern": "{date}_{name}.{ext}", "date_source": "modified"},
+    {"type": "organize", "operation": "move", "dest": "D:/财务", "subfolder": "{year}/{month}", "date_source": "modified"}
+  ]
+}

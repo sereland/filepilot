@@ -7,5 +7,7 @@ pub mod engine;
 pub mod oplog;
 pub mod protection;
 pub mod rules;
+pub mod matching;
+pub mod templates;
 pub mod store;
 pub mod watcher;
