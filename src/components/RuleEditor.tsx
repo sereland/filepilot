@@ -1,8 +1,10 @@
 import { useId, useRef, useState } from "react";
 import { api } from "../lib/api";
 import { captureVariables, validateRule } from "../lib/ruleValidation";
-import { describeAction, describeCondition, directoryConditions, newEmptyRule, type Action, type Condition, type DateSource, type Rule } from "../lib/types";
+import { normalizeRule } from "../lib/ruleSummary";
+import { directoryConditions, newEmptyRule, type Action, type Condition, type DateSource, type Rule } from "../lib/types";
 import ConditionEditor from "./ConditionEditor";
+import LivePreview from "./LivePreview";
 import Modal from "./Modal";
 import SelectField from "./SelectField";
 import Switch from "./Switch";
@@ -54,18 +56,17 @@ export default function RuleEditor({ initial, monitoring, onClose, onSaved }: {
       });
       return;
     }
-    const folders = [...new Set(rule.watch_folders.map((folder) => folder.trim()).filter(Boolean))];
+    const normalized = normalizeRule(rule);
     setError(""); setSaving(true);
     try {
-      const saved = await api.saveRule({ ...rule, name: rule.name.trim(), watch_folders: folders,
-        conditions: rule.conditions.map((condition) => condition.type === "name_contains" ? { ...condition, keyword: condition.keyword.trim() } : condition),
-        actions: rule.actions.map((action) => action.type === "move" || action.type === "copy" || action.type === "move_and_extract" || action.type === "organize" ? { ...action, dest: action.dest.trim() } : action) });
+      const saved = await api.saveRule(normalized);
       await onSaved(saved);
     } catch (e) { setError("保存失败：" + String(e)); }
     finally { setSaving(false); }
   };
-  return <Modal title={initial?.id ? "编辑规则" : "新建规则"} description="选择来源，定义条件，再指定去向。标 * 的项目为必填。" onClose={onClose} busy={saving} closeOnBackdrop={false}
-    footer={<><span className="foot-note">保存后可先预览整理效果</span><button className="btn btn-secondary" onClick={onClose} disabled={saving}>取消</button><button className="btn btn-primary" onClick={save} disabled={saving}>{saving ? "保存中…" : "保存规则"}</button></>}>
+  return <Modal title={initial?.id ? "编辑规则" : "新建规则"} description="选择来源，定义条件，再指定去向，右侧实时显示整理结果。标 * 的项目为必填。" onClose={onClose} busy={saving} closeOnBackdrop={false}
+    aside={<LivePreview rule={rule} />}
+    footer={<><span className="foot-note">保存后仍需确认预览才会整理已有{objectName}</span><button className="btn btn-secondary" onClick={onClose} disabled={saving}>取消</button><button className="btn btn-primary" onClick={save} disabled={saving}>{saving ? "保存中…" : "保存规则"}</button></>}>
     {Object.keys(errors).length > 0 && <p className="validation-summary" role="alert">还有 {Object.keys(errors).length} 处需要补充或修改，请检查红框标出的项目。</p>}
     <fieldset ref={fieldsRef} className="editor-fields" disabled={saving}>
       <div className="field-control"><label className="field"><span>规则名称<RequiredMark /></span><input autoFocus aria-required="true" {...validation("name")} value={rule.name} onChange={(e) => set({ name: e.target.value })} placeholder="例如：图片自动归档" maxLength={80} /></label>{feedback("name")}</div>
@@ -99,7 +100,6 @@ export default function RuleEditor({ initial, monitoring, onClose, onSaved }: {
         {rule.actions.some((action) => (action.type === "rename" || action.type === "rename_with_date")) && <p className="editor-help">支持 {"{name}"} 原{objectName}名、{!isDirectory && <>{"{ext}"} 扩展名、</>}{"{date}"} 日期、{"{datetime}"} 日期时间、{"{year}"} 年、{"{month}"} 月、{"{day}"} 日。移动或重命名后继续处理新路径；复制后仍处理原文件。</p>}
       </section>
       <div className="auto-option"><div><strong>自动整理</strong><p>{rule.enabled ? monitoring ? `来源文件夹出现符合条件的${objectName}时自动整理。` : "已选择自动整理；全局恢复后开始监控。" : `仅在你手动预览并确认后整理${objectName}。`}</p></div><Switch checked={rule.enabled} onChange={() => set({ enabled: !rule.enabled })} label="这条规则的自动整理" /></div>
-      <div className="live-summary"><strong>这条规则会这样工作</strong><span>在 {rule.watch_folders.filter(Boolean).join("、") || "来源文件夹"} 中，{rule.conditions.map((condition) => condition.type === "extension" && !condition.exts.length ? "扩展名是所选文件类型" : condition.type === "name_contains" && !condition.keyword ? `${objectName}名包含指定关键词` : describeCondition(condition, rule.target_kind)).join(" 且 ")} 的{objectName}，将{rule.actions.map((action) => (action.type === "move" || action.type === "copy" || action.type === "move_and_extract") && !action.dest ? (action.type === "move" ? "移动到" : action.type === "copy" ? "复制到" : "移动并解压到") + "目标文件夹" : describeAction(action)).join("；")}。{rule.enabled ? "参与自动整理。" : "仅手动执行。"}</span></div>
     </fieldset>
     {error && <p className="error" role="alert">{error}</p>}
   </Modal>;

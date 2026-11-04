@@ -1,0 +1,310 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FilePilot · 新建规则（两栏 + 实时预览）预览稿</title>
+<style>
+:root {
+  --bg:#f7f8fa; --surface:#fff; --side:#f1f3f6; --hover:#f0f2f5;
+  --ink:#202834; --muted:#687385; --soft:#798496; --line:#e3e7ed;
+  --brand:#2563eb; --brand-hover:#1d4ed8; --tint:#e9effc; --danger:#c23f3f;
+  --ok:#1f8a4c; --ok-tint:#e7f5ec; --warn:#a15c00; --warn-tint:#fdf3e2;
+  --cap1:#dbe7ff; --cap2:#e6f4d9; --cap3:#fbe5f1;
+}
+* { box-sizing:border-box; }
+html,body { margin:0; height:100%; }
+body { font:14px/1.55 "Segoe UI Variable","Segoe UI","Microsoft YaHei",sans-serif; color:var(--ink); background:var(--bg); -webkit-font-smoothing:antialiased; }
+button,input,select { font:inherit; }
+button { cursor:pointer; color:inherit; }
+input,select { width:100%; min-width:0; padding:8px 11px; color:var(--ink); background:var(--surface); border:1px solid var(--line); border-radius:6px; font-size:13px; }
+input::placeholder { color:var(--soft); font-weight:400; }
+input:focus,select:focus { outline:2px solid var(--brand); outline-offset:-1px; border-color:transparent; }
+svg { width:16px; height:16px; vertical-align:middle; flex-shrink:0; }
+
+/* 背景应用壳 */
+.app { display:flex; height:100%; }
+.sidebar { width:216px; background:var(--side); border-right:1px solid var(--line); padding:28px 16px; }
+.brand { display:flex; gap:10px; align-items:center; font-size:18px; font-weight:650; padding:0 12px 32px; }
+.brand i { width:30px; height:30px; border-radius:8px; background:var(--brand); display:inline-block; }
+.nav { padding:11px 12px; border-radius:6px; color:var(--muted); }
+.nav.active { background:var(--tint); color:var(--brand); font-weight:600; }
+.main { flex:1; padding:40px 48px; }
+.main h1 { margin:0; font-size:24px; }
+.backdrop { position:fixed; inset:0; background:#0b172866; display:grid; place-items:center; }
+
+/* 弹窗 */
+.modal { width:min(1040px, calc(100vw - 48px)); height:min(640px, calc(100vh - 40px)); background:var(--surface); border:1px solid var(--line); border-radius:12px; box-shadow:0 16px 64px #18283e25; display:flex; flex-direction:column; overflow:hidden; }
+.modal-header { display:flex; align-items:center; gap:12px; padding:14px 20px; border-bottom:1px solid var(--line); }
+.modal-header h2 { margin:0; font-size:16px; font-weight:600; white-space:nowrap; }
+.name-edit { flex:1; display:flex; align-items:center; gap:6px; min-width:0; }
+.name-edit input { border-color:transparent; background:transparent; font-size:13px; color:var(--muted); padding:5px 8px; }
+.name-edit input:hover { border-color:var(--line); }
+.name-edit .tag { font-size:11px; color:var(--soft); white-space:nowrap; }
+.icon-btn { border:0; background:transparent; color:var(--muted); width:30px; height:30px; border-radius:6px; display:grid; place-items:center; }
+.icon-btn:hover { background:var(--hover); }
+.modal-body { flex:1; min-height:0; display:grid; grid-template-columns:minmax(0,1fr) 400px; }
+.form { overflow:auto; padding:18px 22px 22px; }
+.aside { border-left:1px solid var(--line); background:var(--bg); display:flex; flex-direction:column; min-height:0; }
+.modal-footer { display:flex; align-items:center; gap:8px; padding:12px 20px; border-top:1px solid var(--line); }
+.foot-note { margin-right:auto; font-size:12px; color:var(--muted); }
+.btn { border:1px solid var(--line); background:var(--surface); border-radius:6px; padding:8px 14px; font-size:13px; display:inline-flex; gap:6px; align-items:center; white-space:nowrap; }
+.btn:hover { background:var(--hover); }
+.btn-primary { color:#fff; background:var(--brand); border-color:var(--brand); }
+.btn-primary:hover { background:var(--brand-hover); }
+
+/* 表单分区 */
+.step { display:grid; grid-template-columns:22px minmax(0,1fr); gap:0 10px; padding-bottom:18px; }
+.step + .step { border-top:1px solid var(--line); padding-top:16px; }
+.step-no { width:22px; height:22px; border-radius:50%; background:var(--tint); color:var(--brand); font-size:12px; font-weight:600; display:grid; place-items:center; margin-top:1px; }
+.step-title { font-size:13px; font-weight:600; margin:0 0 10px; display:flex; align-items:center; gap:8px; }
+.step-title .hint { font-weight:400; color:var(--muted); font-size:12px; }
+.row { display:flex; gap:8px; align-items:center; }
+.row + .row { margin-top:8px; }
+.seg { display:inline-flex; border:1px solid var(--line); border-radius:6px; padding:2px; background:var(--bg); flex-shrink:0; }
+.seg button { border:0; background:transparent; padding:5px 12px; font-size:12px; border-radius:4px; color:var(--muted); }
+.seg button.on { background:var(--surface); color:var(--ink); font-weight:600; box-shadow:0 1px 2px #18283e1a; }
+.w-field { width:112px; flex-shrink:0; }
+.w-op { width:112px; flex-shrink:0; }
+.mono { font-family:"Cascadia Mono",Consolas,monospace; font-size:12.5px; }
+.remove { border:0; background:transparent; color:var(--soft); width:26px; height:30px; border-radius:4px; flex-shrink:0; }
+.remove:hover { background:var(--hover); color:var(--danger); }
+.link { border:0; background:transparent; color:var(--brand); font-size:12px; padding:4px 2px; }
+.link.muted { color:var(--muted); }
+.link:hover { text-decoration:underline; }
+.combinator { font-size:12px; color:var(--muted); margin:0 0 8px; display:flex; gap:6px; align-items:center; }
+.combinator select { width:auto; padding:3px 8px; font-size:12px; }
+.ext-chips { display:flex; gap:6px; flex-wrap:wrap; align-items:center; flex:1; min-height:36px; padding:4px 8px; border:1px solid var(--line); border-radius:6px; }
+.chip { display:inline-flex; align-items:center; gap:4px; padding:2px 8px; border-radius:999px; background:var(--tint); color:var(--brand); font-size:12px; }
+
+/* 正则助手 */
+.helper { margin-top:10px; border:1px dashed #c9d6f3; background:#f8faff; border-radius:8px; padding:10px 12px; }
+.helper-head { display:flex; justify-content:space-between; align-items:center; font-size:12px; color:var(--muted); }
+.sample { margin:8px 0 6px; font-size:15px; letter-spacing:.2px; user-select:text; }
+.sample mark { border-radius:4px; padding:1px 2px; color:inherit; }
+.sample mark small { font-size:10px; color:var(--muted); margin-left:2px; vertical-align:super; }
+.helper p { margin:0; font-size:11.5px; color:var(--muted); }
+
+/* 动作 */
+.vars { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; align-items:center; }
+.vars span { font-size:11.5px; color:var(--muted); margin-right:2px; }
+.var { border:1px solid var(--line); background:var(--surface); border-radius:999px; padding:1px 9px; font-size:12px; }
+.var:hover { border-color:var(--brand); color:var(--brand); }
+.var.cap { background:var(--cap1); border-color:transparent; }
+.var.cap.y { background:var(--cap2); }
+.auto { display:flex; justify-content:space-between; align-items:center; }
+.auto p { margin:2px 0 0; font-size:12px; color:var(--muted); }
+.switch { width:36px; height:20px; border-radius:999px; background:#c3cad5; border:0; position:relative; }
+.switch::after { content:""; position:absolute; top:2px; left:2px; width:16px; height:16px; border-radius:50%; background:#fff; transition:.15s; }
+.switch.on { background:var(--brand); }
+.switch.on::after { left:18px; }
+
+/* 右侧实时预览 */
+.aside-head { padding:16px 18px 12px; border-bottom:1px solid var(--line); }
+.aside-head h3 { margin:0; font-size:13px; display:flex; align-items:center; gap:8px; }
+.live-dot { width:7px; height:7px; border-radius:50%; background:var(--ok); box-shadow:0 0 0 3px var(--ok-tint); }
+.summary { margin:8px 0 0; font-size:12.5px; color:var(--ink); line-height:1.65; }
+.summary b { font-weight:600; }
+.stats { display:flex; gap:6px; margin-top:10px; }
+.stat { font-size:11.5px; padding:2px 8px; border-radius:999px; background:var(--surface); border:1px solid var(--line); color:var(--muted); }
+.stat.ok { color:var(--ok); background:var(--ok-tint); border-color:transparent; }
+.stat.warn { color:var(--warn); background:var(--warn-tint); border-color:transparent; }
+.list { flex:1; overflow:auto; padding:8px 10px 12px; }
+.group-label { font-size:11px; color:var(--soft); margin:10px 8px 4px; }
+.item { padding:6px 10px; border-radius:6px; background:var(--surface); border:1px solid var(--line); margin-bottom:4px; }
+.item .src { font-size:12.5px; word-break:break-all; line-height:1.45; }
+.item .src mark { border-radius:3px; padding:0 1px; color:inherit; }
+.item .dest { margin-top:1px; font-size:11.5px; line-height:1.4; color:var(--muted); display:flex; gap:4px; word-break:break-all; }
+.item .dest b { color:var(--ink); font-weight:500; }
+.item.warn { border-color:#f1d9ae; background:var(--warn-tint); }
+.item.warn .dest { color:var(--warn); }
+.item.miss { background:transparent; border-style:dashed; }
+.item.miss .src { color:var(--soft); }
+.aside-foot { padding:10px 18px; border-top:1px solid var(--line); font-size:11.5px; color:var(--muted); }
+
+.note { position:fixed; right:16px; bottom:12px; font-size:11px; color:#fff; background:#0b1728aa; padding:4px 10px; border-radius:6px; }
+</style>
+</head>
+<body>
+<div class="app" aria-hidden="true">
+  <aside class="sidebar"><div class="brand"><i></i>FilePilot</div><div class="nav active">整理规则</div><div class="nav">操作记录</div><div class="nav">规则模板</div><div class="nav">设置</div></aside>
+  <main class="main"><h1>整理规则</h1></main>
+</div>
+
+<div class="backdrop">
+<section class="modal" role="dialog" aria-label="新建规则">
+  <header class="modal-header">
+    <h2>新建规则</h2>
+    <div class="name-edit"><input id="name" aria-label="规则名称"><span class="tag" id="nameTag">自动命名 · 可修改</span></div>
+    <button class="icon-btn" aria-label="关闭"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+  </header>
+
+  <div class="modal-body">
+    <div class="form">
+      <section class="step">
+        <span class="step-no">1</span>
+        <div>
+          <p class="step-title">从哪里整理</p>
+          <div class="row">
+            <div class="seg" role="group" aria-label="整理对象"><button class="on">文件</button><button>文件夹</button></div>
+            <input value="D:\Downloads" aria-label="来源文件夹">
+            <button class="btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7h6l2 2h10v10H3z"/></svg>选择</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="step">
+        <span class="step-no">2</span>
+        <div>
+          <p class="step-title">哪些文件 <span class="hint">名称不区分大小写</span></p>
+          <p class="combinator">以下条件 <select aria-label="条件组合"><option>全部满足</option><option>任一满足</option></select></p>
+          <div class="row">
+            <select class="w-field" aria-label="条件字段"><option>扩展名</option></select>
+            <select class="w-op" aria-label="匹配方式"><option>是</option></select>
+            <div class="ext-chips"><span class="chip">xlsx ×</span><span class="chip">xls ×</span></div>
+            <button class="remove" aria-label="删除条件">×</button>
+          </div>
+          <div class="row">
+            <select class="w-field" aria-label="条件字段"><option>文件名称</option></select>
+            <select class="w-op" aria-label="匹配方式"><option>匹配正则</option><option>包含</option></select>
+            <input id="regex" class="mono" aria-label="正则表达式" spellcheck="false">
+            <button class="remove" aria-label="删除条件">×</button>
+          </div>
+          <div class="helper">
+            <div class="helper-head"><span>✨ 从示例生成：选中文件名中要提取的部分并命名</span><button class="link">换一个示例</button></div>
+            <div class="sample" id="sample"></div>
+            <p>已提取 <b>客户</b>、<b>年</b>，下方模板可直接点击插入。不熟悉正则也能用。</p>
+          </div>
+          <div class="row" style="margin-top:8px"><button class="link">＋ 添加条件</button><button class="link muted">高级：条件组 / 排除</button></div>
+        </div>
+      </section>
+
+      <section class="step">
+        <span class="step-no">3</span>
+        <div>
+          <p class="step-title">怎么处理</p>
+          <div class="row">
+            <select style="width:112px;flex-shrink:0" aria-label="动作"><option>移动到</option><option>复制到</option><option>重命名</option></select>
+            <input value="D:\工作" aria-label="目标文件夹">
+            <button class="btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7h6l2 2h10v10H3z"/></svg>选择</button>
+          </div>
+          <div class="row">
+            <span style="width:112px;flex-shrink:0;font-size:12px;color:var(--muted);text-align:right;padding-right:4px">子文件夹</span>
+            <input id="tpl" class="mono" aria-label="子文件夹模板" placeholder="留空直接放入目标文件夹">
+          </div>
+          <div class="vars" style="padding-left:120px"><span>点击插入</span>
+            <button class="var cap" data-v="{客户}">客户</button><button class="var cap y" data-v="{年}">年</button>
+            <button class="var" data-v="{year}">年份</button><button class="var" data-v="{month}">月份</button><button class="var" data-v="{ext}">扩展名</button><button class="var" data-v="{name}">原名</button>
+          </div>
+          <div class="row" style="margin-top:10px"><button class="link">＋ 添加动作</button></div>
+        </div>
+      </section>
+
+      <section class="step">
+        <span class="step-no">4</span>
+        <div class="auto">
+          <div><p class="step-title" style="margin:0">自动整理</p><p id="autoText">仅在你手动预览并确认后整理。</p></div>
+          <button class="switch" id="auto" aria-label="自动整理"></button>
+        </div>
+      </section>
+    </div>
+
+    <aside class="aside" aria-label="实时预览">
+      <div class="aside-head">
+        <h3><span class="live-dot"></span>实时预览</h3>
+        <p class="summary" id="summary"></p>
+        <div class="stats" id="stats"></div>
+      </div>
+      <div class="list" id="list"></div>
+      <div class="aside-foot">基于来源文件夹当前内容模拟，不会移动任何文件。</div>
+    </aside>
+  </div>
+
+  <footer class="modal-footer">
+    <span class="foot-note" id="footNote"></span>
+    <button class="btn">取消</button>
+    <button class="btn">保存</button>
+    <button class="btn btn-primary" id="saveRun"></button>
+  </footer>
+</section>
+</div>
+<div class="note">预览稿：可直接修改正则和子文件夹模板，右侧实时更新</div>
+
+<script>
+const files = [
+  "报价_华为_2024Q3.xlsx", "报价_小米_2023.xlsx", "报价_华为_2025-01.xls", "报价_字节跳动_2024.xlsx",
+  "报价_ACME_2024.XLSX", "报价单（草稿）.xlsx", "考勤表_10月.xlsx", "发票_滴滴_2024.pdf", "IMG_2041.png", "新建 Microsoft Excel 工作表.xlsx"
+];
+const exts = ["xlsx", "xls"];
+const $ = (id) => document.getElementById(id);
+const regexInput = $("regex"), tplInput = $("tpl");
+regexInput.value = "^报价_(?<客户>[^_]+)_(?<年>\\d{4})";
+tplInput.value = "客户/{客户}/{年}";
+const colors = ["var(--cap1)", "var(--cap2)", "var(--cap3)"];
+const esc = (s) => s.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]);
+
+function highlight(name, match) {
+  if (!match || !match.indices?.groups) return esc(name);
+  const spans = Object.entries(match.indices.groups).filter(([, r]) => r).map(([k, r], i) => ({ k, s: r[0], e: r[1], c: colors[i % 3] })).sort((a, b) => a.s - b.s);
+  let out = "", pos = 0;
+  for (const sp of spans) { out += esc(name.slice(pos, sp.s)) + `<mark style="background:${sp.c}" title="${sp.k}">${esc(name.slice(sp.s, sp.e))}</mark>`; pos = sp.e; }
+  return out + esc(name.slice(pos));
+}
+
+function render() {
+  let re = null, error = "";
+  try { re = new RegExp(regexInput.value.replace(/\(\?P</g, "(?<"), "id"); } catch (e) { error = "正则表达式无效"; }
+  regexInput.style.outline = error ? "2px solid var(--danger)" : "";
+  const now = new Date(), y = String(now.getFullYear()), m = String(now.getMonth() + 1).padStart(2, "0");
+  const hits = [], warns = [], misses = [];
+  for (const f of files) {
+    const ext = f.split(".").pop().toLowerCase();
+    const match = re && re.exec(f);
+    if (!exts.includes(ext) || !match) { misses.push(f); continue; }
+    const g = match.groups || {};
+    let missing = "";
+    const path = tplInput.value.replace(/\{([^{}]+)\}/g, (all, k) => {
+      const v = { year: y, month: m, ext, name: f.replace(/\.[^.]+$/, "") }[k] ?? g[k]?.trim();
+      if (!v) { missing = missing || k; return all; }
+      return v;
+    });
+    (missing ? warns : hits).push({ f, match, path, missing });
+  }
+  const list = [];
+  if (hits.length) list.push(`<div class="group-label">将移动 ${hits.length} 个</div>`);
+  for (const h of hits) list.push(`<div class="item"><div class="src">${highlight(h.f, h.match)}</div><div class="dest">→ D:\\工作\\<b>${esc(h.path.replace(/\//g, "\\"))}</b></div></div>`);
+  if (warns.length) list.push(`<div class="group-label">需要处理 ${warns.length} 个</div>`);
+  for (const w of warns) list.push(`<div class="item warn"><div class="src">${highlight(w.f, w.match)}</div><div class="dest">⚠ 未提取到「${esc(w.missing)}」，将跳过</div></div>`);
+  if (misses.length) list.push(`<div class="group-label">未命中 ${misses.length} 个（不处理）</div>`);
+  for (const f of misses.slice(0, 4)) list.push(`<div class="item miss"><div class="src">${esc(f)}</div></div>`);
+  if (misses.length > 4) list.push(`<div class="group-label" style="margin-top:2px">… 另有 ${misses.length - 4} 个</div>`);
+  $("list").innerHTML = error ? `<div class="item warn"><div class="dest">⚠ ${error}，请检查括号和转义。</div></div>` : list.join("");
+
+  $("summary").innerHTML = `在 <b>D:\\Downloads</b> 中，扩展名为 <b>xlsx、xls</b> 且名称匹配正则的文件，移动到 <b>D:\\工作\\${esc(tplInput.value.replace(/\//g, "\\"))}</b>。`;
+  $("stats").innerHTML = `<span class="stat">共 ${files.length} 个文件</span><span class="stat ok">命中 ${hits.length}</span>` + (warns.length ? `<span class="stat warn">需注意 ${warns.length}</span>` : "");
+  $("footNote").textContent = hits.length ? `保存后可立即整理这 ${hits.length} 个文件，执行前仍会确认，可撤销。` : "当前没有命中的文件。";
+  $("saveRun").textContent = hits.length ? `保存并整理 ${hits.length} 个` : "保存并整理";
+  if (!$("name").dataset.touched) $("name").value = `Excel 报价单 → 客户/{客户}/{年}`;
+
+  const sampleMatch = re && re.exec(files[0]);
+  $("sample").innerHTML = sampleMatch?.indices?.groups
+    ? highlight(files[0], sampleMatch).replace(/<mark style="([^"]+)" title="([^"]+)">([^<]+)<\/mark>/g, '<mark style="$1">$3<small>$2</small></mark>')
+    : esc(files[0]);
+}
+regexInput.addEventListener("input", render);
+tplInput.addEventListener("input", render);
+$("name").addEventListener("input", () => { $("name").dataset.touched = "1"; $("nameTag").textContent = "已自定义"; });
+document.querySelectorAll(".var").forEach((b) => b.addEventListener("click", () => {
+  const s = tplInput.selectionStart ?? tplInput.value.length;
+  tplInput.value = tplInput.value.slice(0, s) + b.dataset.v + tplInput.value.slice(tplInput.selectionEnd ?? s);
+  tplInput.focus(); render();
+}));
+$("auto").addEventListener("click", (e) => {
+  const on = e.currentTarget.classList.toggle("on");
+  $("autoText").textContent = on ? "D:\\Downloads 出现符合条件的文件时自动整理。" : "仅在你手动预览并确认后整理。";
+});
+document.querySelectorAll(".seg button").forEach((b) => b.addEventListener("click", () => { document.querySelectorAll(".seg button").forEach((x) => x.classList.toggle("on", x === b)); }));
+render();
+</script>
+</body>
+</html>

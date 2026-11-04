@@ -10,9 +10,11 @@ interface Props {
   busy?: boolean;
   compact?: boolean;
   closeOnBackdrop?: boolean;
+  /** 右侧固定面板；提供时弹窗变宽，左侧内容单独滚动。 */
+  aside?: ReactNode;
 }
 
-export default function Modal({ title, description, children, footer, onClose, busy, compact, closeOnBackdrop = true }: Props) {
+export default function Modal({ title, description, children, footer, onClose, busy, compact, closeOnBackdrop = true, aside }: Props) {
   const ref = useRef<HTMLDialogElement>(null);
   const titleId = useId();
   useEffect(() => {
@@ -26,7 +28,7 @@ export default function Modal({ title, description, children, footer, onClose, b
     };
   }, []);
   return (
-    <dialog ref={ref} className={`modal${compact ? " compact" : ""}`} aria-labelledby={titleId}
+    <dialog ref={ref} className={`modal${compact ? " compact" : ""}${aside ? " with-aside" : ""}`} aria-labelledby={titleId}
       onCancel={(e) => { e.preventDefault(); if (!busy) onClose(); }}
       onClick={(e) => {
         const rect = e.currentTarget.getBoundingClientRect();
@@ -35,7 +37,7 @@ export default function Modal({ title, description, children, footer, onClose, b
       <div className="modal-header"><div><h2 id={titleId}>{title}</h2>{description && <p>{description}</p>}</div>
         <button type="button" className="icon-btn" aria-label="关闭" disabled={busy} onClick={onClose}><IconX /></button>
       </div>
-      <div className="modal-body">{children}</div>
+      {aside ? <div className="modal-split"><div className="modal-body">{children}</div>{aside}</div> : <div className="modal-body">{children}</div>}
       {footer && <div className="modal-footer">{footer}</div>}
     </dialog>
   );

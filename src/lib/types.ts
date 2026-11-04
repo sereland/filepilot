@@ -50,6 +50,13 @@ export interface PlanItem {
   };
 }
 
+export interface DraftStep { kind: "move" | "copy" | "rename" | "recycle" | "move_extract"; dest: string | null }
+export interface DraftItem { src: string; name: string; is_directory: boolean; captures: Record<string, string>; steps: DraftStep[]; error: string | null }
+export interface DraftPreview {
+  total: number; matched: number; items: DraftItem[]; unmatched: string[]; missing_folders: string[];
+  condition_error: string | null; action_error: string | null;
+}
+
 export interface OpRecord {
   id: string;
   batch_id: string;
