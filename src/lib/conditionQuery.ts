@@ -10,7 +10,7 @@ export function toQuery(conditions: Condition[], path = "root"): RuleGroupType {
       switch (condition.type) {
         case "extension": return {id,field:"extension",operator:"in",value:condition.exts};
         case "name_contains": return {id,field:"name",operator:"contains",value:condition.keyword};
-        case "name_match": return {id,field:"name",operator:{contains:"contains",not_contains:"doesNotContain",equals:"=",starts_with:"beginsWith",ends_with:"endsWith"}[condition.operator],value:condition.keyword};
+        case "name_match": return {id,field:"name",operator:{contains:"contains",not_contains:"doesNotContain",equals:"=",starts_with:"beginsWith",ends_with:"endsWith",regex:"regex"}[condition.operator],value:condition.keyword};
         case "size_greater_than": return {id,field:"size",operator:">",value:condition.bytes/1048576};
         case "size_less_than": return {id,field:"size",operator:"<",value:condition.bytes/1048576};
         case "size_between": return {id,field:"size",operator:"between",value:[condition.min/1048576,condition.max/1048576]};
@@ -26,7 +26,7 @@ export function fromQuery(query: RuleGroupType): Condition[] {
     const rule=row as RuleType;
     switch (rule.field) {
       case "extension": return {type:"extension",exts:Array.isArray(rule.value)?rule.value:String(rule.value??"").split(/[,，\s]+/).filter(Boolean)} as Condition;
-      case "name": return {type:"name_match",operator:({contains:"contains",doesNotContain:"not_contains","=":"equals",beginsWith:"starts_with",endsWith:"ends_with"} as const)[rule.operator as "contains"]??"contains",keyword:String(rule.value??"")} as Condition;
+      case "name": return {type:"name_match",operator:({contains:"contains",doesNotContain:"not_contains","=":"equals",beginsWith:"starts_with",endsWith:"ends_with",regex:"regex"} as const)[rule.operator as "contains"]??"contains",keyword:String(rule.value??"")} as Condition;
       case "size": {
         const values=Array.isArray(rule.value)?rule.value:String(rule.value??"").split(",");
         if (rule.operator === "between") return {type:"size_between",min:Math.round(number(values[0])*1048576),max:Math.round(number(values[1])*1048576)} as Condition;

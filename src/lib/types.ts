@@ -5,7 +5,7 @@ export type Condition =
   | { type: "name_contains"; keyword: string }
   | { type: "size_greater_than"; bytes: number }
   | { type: "created_within_days"; days: number }
-  | { type: "name_match"; operator: "contains" | "not_contains" | "equals" | "starts_with" | "ends_with"; keyword: string }
+  | { type: "name_match"; operator: "contains" | "not_contains" | "equals" | "starts_with" | "ends_with" | "regex"; keyword: string }
   | { type: "size_less_than"; bytes: number }
   | { type: "size_between"; min: number; max: number }
   | { type: "date_match"; field: "created" | "modified"; operator: "within_days" | "older_than_days"; days: number }
@@ -100,7 +100,7 @@ export function describeCondition(c: Condition, target: Rule["target_kind"] = "f
       return `文件大于 ${formatBytes(c.bytes)}`;
     case "created_within_days":
       return `${c.days} 天内创建的${name}`;
-    case "name_match": return `${name}名${({contains:"包含",not_contains:"不包含",equals:"等于",starts_with:"开头是",ends_with:"结尾是"})[c.operator]}「${c.keyword}」`;
+    case "name_match": return `${name}名${({contains:"包含",not_contains:"不包含",equals:"等于",starts_with:"开头是",ends_with:"结尾是",regex:"匹配正则"})[c.operator]}「${c.keyword}」`;
     case "size_less_than": return `文件小于 ${formatBytes(c.bytes)}`;
     case "size_between": return `文件大小 ${formatBytes(c.min)} 至 ${formatBytes(c.max)}`;
     case "date_match": return `${c.field === "created" ? "创建" : "修改"}时间${c.operator === "within_days" ? "在最近" : "距今至少"} ${c.days} 天`;
