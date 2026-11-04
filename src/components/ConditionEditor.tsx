@@ -34,9 +34,9 @@ export default function ConditionEditor({ conditions, isDirectory, submitted, on
       getDefaultValue={rule=>rule.field === "extension" ? [] : rule.field === "name" ? "" : rule.field === "size" ? rule.operator === "between" ? [0,100] : 100 : 7}
       controlElements={{valueEditor:ValueEditor,valueSelector:Selector}}
       validator={submitted ? validateQuery : undefined}
-      translations={{addRule:{label:"＋ 条件",title:"添加条件"},addGroup:{label:"＋ 条件组",title:"添加条件组"},removeRule:{label:"×",title:"删除条件"},removeGroup:{label:"×",title:"删除条件组"},notToggle:{label:"排除",title:"排除此组条件"},combinators:{title:"条件组合"},fields:{title:"条件字段"},operators:{title:"匹配方式"},value:{title:"条件内容"}}}
+      translations={{addRule:{label:"＋ 添加条件",title:"添加条件"},addGroup:{label:"＋ 条件组",title:"添加条件组"},removeRule:{label:"×",title:"删除条件"},removeGroup:{label:"×",title:"删除条件组"},notToggle:{label:"排除这组",title:"不满足这组条件时才命中"},combinators:{title:"条件组合"},fields:{title:"条件字段"},operators:{title:"匹配方式"},value:{title:"条件内容"}}}
       combinators={[{name:"and",label:"全部满足"},{name:"or",label:"任一满足"}]} />
-    <p className="editor-help">组内可选全部或任一满足，勾选“排除”表示不满足该组。扩展名内任一种均可匹配；名称不区分大小写。</p>
+    <p className="editor-help">扩展名内任一种即可匹配；勾选“排除这组”表示不满足该组时才命中。</p>
     {hasRegex(conditions) && <p className="editor-help">正则匹配完整名称（含扩展名）。用 {"(?<客户>[^_]+)"} 这样的命名捕获组提取内容，即可在子文件夹和重命名模板中写 {"{客户}"}；排除组内的捕获不可引用。</p>}
     {hasDate(conditions) && <p className="editor-help">时间条件在文件夹变化或手动预览时检查；静置文件达到天数后，目前需要手动预览整理。</p>}
   </div>;
@@ -49,6 +49,7 @@ function Selector(props:ValueSelectorProps) {
   type Option={name:string;label:string;disabled?:boolean};
   const options=props.options.flatMap(option=>"options" in option && Array.isArray(option.options) ? option.options as Option[] : [option as Option]);
   const invalid=props.validation === false || (!!props.validation && typeof props.validation === "object" && !props.validation.valid);
+  if (props.title === "条件组合") return <div className="group-combinator"><span>以下条件</span><SelectField className={props.className} title={props.title} aria-label={props.title} aria-invalid={invalid || undefined} value={props.value} disabled={props.disabled} onChange={e=>props.handleOnChange(e.target.value)}>{options.map(option=><option key={option.name} value={option.name} disabled={option.disabled}>{option.label}</option>)}</SelectField></div>;
   return <SelectField className={props.className} title={props.title} aria-label={props.title} aria-invalid={props.title === "条件组合" && invalid || undefined} value={props.value} disabled={props.disabled} onChange={e=>props.handleOnChange(e.target.value)}>{options.map(option=><option key={option.name} value={option.name} disabled={option.disabled}>{option.label}</option>)}</SelectField>;
 }
 

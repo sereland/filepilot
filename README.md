@@ -44,7 +44,7 @@ FilePilot is a free, Chinese-first, modern automatic file organizer for Windows.
 
 ## 开发 / Development
 
-界面定稿见 [设计规范](design/UI_FINAL.md)，独立预览见 [最终 HTML 预览](design/preview-final.html)。主窗口默认 1120 × 700，采用侧栏导航、单列规则、独立模板页和文件类型多选。新规则默认仅手动，自动整理可按规则开启。
+界面定稿见 [设计规范](design/UI_FINAL.md)，独立预览见 [最终 HTML 预览](design/preview-final.html)。主窗口默认 960 × 640（最小 800 × 560），采用侧栏导航、单列规则、独立模板页和文件类型多选。新规则默认仅手动，自动整理可按规则开启。
 
 ```bash
 npm install

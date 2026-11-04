@@ -12,16 +12,18 @@ interface Props {
   closeOnBackdrop?: boolean;
   /** 右侧固定面板；提供时弹窗变宽，左侧内容单独滚动。 */
   aside?: ReactNode;
+  /** 标题右侧的附加内容，如规则名称输入框。 */
+  titleExtra?: ReactNode;
 }
 
-export default function Modal({ title, description, children, footer, onClose, busy, compact, closeOnBackdrop = true, aside }: Props) {
+export default function Modal({ title, description, children, footer, onClose, busy, compact, closeOnBackdrop = true, aside, titleExtra }: Props) {
   const ref = useRef<HTMLDialogElement>(null);
   const titleId = useId();
   useEffect(() => {
     const dialog = ref.current!;
     const previousFocus = document.activeElement as HTMLElement | null;
     dialog.showModal();
-    dialog.querySelector<HTMLElement>("input, select")?.focus();
+    (dialog.querySelector<HTMLElement>("[data-autofocus]") ?? dialog.querySelector<HTMLElement>("input, select"))?.focus();
     return () => {
       dialog.close();
       if (previousFocus?.isConnected) previousFocus.focus();
@@ -34,7 +36,7 @@ export default function Modal({ title, description, children, footer, onClose, b
         const rect = e.currentTarget.getBoundingClientRect();
         if (closeOnBackdrop && !busy && e.target === e.currentTarget && (e.clientX < rect.left || e.clientX > rect.right || e.clientY < rect.top || e.clientY > rect.bottom)) onClose();
       }}>
-      <div className="modal-header"><div><h2 id={titleId}>{title}</h2>{description && <p>{description}</p>}</div>
+      <div className="modal-header"><div className="modal-title"><h2 id={titleId}>{title}</h2>{description && <p>{description}</p>}</div>{titleExtra}
         <button type="button" className="icon-btn" aria-label="关闭" disabled={busy} onClick={onClose}><IconX /></button>
       </div>
       {aside ? <div className="modal-split"><div className="modal-body">{children}</div>{aside}</div> : <div className="modal-body">{children}</div>}
