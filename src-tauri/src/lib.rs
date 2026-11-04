@@ -188,6 +188,17 @@ async fn preview_rule(app: AppHandle, id: String) -> Result<Vec<engine::PlanItem
     .map_err(|e| e.to_string())?
 }
 
+/// 编辑器中尚未保存的规则的实时预览，只读、不加整理锁。
+#[tauri::command]
+async fn preview_draft(rule: Rule) -> Result<engine::DraftPreview, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let folders: Vec<PathBuf> = rule.watch_folders.iter().map(PathBuf::from).collect();
+        engine::draft_preview(&rule, &folders)
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
 fn apply_rule_inner(
     state: &AppState,
     app: &AppHandle,
@@ -601,6 +612,7 @@ pub fn run() {
             set_rule_enabled,
             open_rule_folder,
             preview_rule,
+            preview_draft,
             apply_rule_now,
             get_oplog,
             get_rule_last_runs,

@@ -134,18 +134,7 @@ fn dry_run_filtered_at(
                 && matcher.matches(meta)
                 && seen.insert(crate::oplog::normalize_path(&meta.path))
         })
-        // A destination container inside the source must not itself be organized.
-        .filter(|meta| {
-            !meta.is_directory
-                || !rule.actions.iter().any(|action| match action {
-                    Action::Move { dest }
-                    | Action::Copy { dest }
-                    | Action::Organize { dest, .. } => Path::new(dest)
-                        .ancestors()
-                        .any(|ancestor| crate::oplog::paths_equal(ancestor, &meta.path)),
-                    _ => false,
-                })
-        })
+        .filter(|meta| !is_destination_container(rule, meta))
         .map(|mut meta| {
             meta.captures = matcher.captures(&meta);
             meta
@@ -244,6 +233,19 @@ fn dry_run_filtered_at(
         }
     }
     plan
+}
+
+/// A destination container inside the source must not itself be organized.
+fn is_destination_container(rule: &Rule, meta: &FileMeta) -> bool {
+    meta.is_directory
+        && rule.actions.iter().any(|action| match action {
+            Action::Move { dest } | Action::Copy { dest } | Action::Organize { dest, .. } => {
+                Path::new(dest)
+                    .ancestors()
+                    .any(|ancestor| crate::oplog::paths_equal(ancestor, &meta.path))
+            }
+            _ => false,
+        })
 }
 
 fn plan_for_action(
@@ -389,6 +391,192 @@ fn plan_for_action(
         }),
         Action::MoveAndExtract { .. } => None,
         Action::Organize { .. } | Action::RenameWithDate { .. } => unreachable!(),
+    }
+}
+
+/// 编辑器实时预览：只扫描、匹配并推算去向，不计算内容校验、不读取压缩包，
+/// 因此可随输入频繁调用；正式整理仍以确认预览为准。
+#[derive(Serialize, Clone, Debug, Default)]
+pub struct DraftPreview {
+    /// 来源中可处理的对象总数（已跳过临时及正在写入的文件）
+    pub total: usize,
+    pub matched: usize,
+    /// 命中的对象，最多 DRAFT_LIMIT 个
+    pub items: Vec<DraftItem>,
+    /// 未命中的名称样例，最多 DRAFT_UNMATCHED_LIMIT 个
+    pub unmatched: Vec<String>,
+    pub missing_folders: Vec<String>,
+    pub condition_error: Option<String>,
+    pub action_error: Option<String>,
+}
+
+#[derive(Serialize, Clone, Debug, Default)]
+pub struct DraftItem {
+    pub src: String,
+    pub name: String,
+    pub is_directory: bool,
+    pub captures: std::collections::BTreeMap<String, String>,
+    pub steps: Vec<DraftStep>,
+    pub error: Option<String>,
+}
+
+#[derive(Serialize, Clone, Debug, Default)]
+pub struct DraftStep {
+    /// move | copy | rename | recycle | move_extract
+    pub kind: String,
+    pub dest: Option<String>,
+}
+
+pub const DRAFT_LIMIT: usize = 100;
+pub const DRAFT_UNMATCHED_LIMIT: usize = 20;
+
+pub fn draft_preview(rule: &Rule, folders: &[PathBuf]) -> DraftPreview {
+    draft_preview_at(rule, folders, SystemTime::now())
+}
+
+pub fn draft_preview_at(rule: &Rule, folders: &[PathBuf], at: SystemTime) -> DraftPreview {
+    let mut out = DraftPreview::default();
+    let mut seen = std::collections::HashSet::new();
+    let mut entries = Vec::new();
+    for folder in folders {
+        if !folder.is_absolute() || !folder.is_dir() {
+            out.missing_folders
+                .push(folder.to_string_lossy().to_string());
+            continue;
+        }
+        entries.extend(
+            scan_entries(folder, rule.target_kind)
+                .into_iter()
+                .filter(|meta| {
+                    (rule.target_kind == TargetKind::Directory) == meta.is_directory
+                        && !is_destination_container(rule, meta)
+                        && seen.insert(crate::oplog::normalize_path(&meta.path))
+                }),
+        );
+    }
+    entries.sort_by_key(|meta| crate::oplog::normalize_path(&meta.path));
+    out.total = entries.len();
+    let matcher = match rule.compile_matcher() {
+        Ok(matcher) => matcher,
+        Err(error) => {
+            out.condition_error = Some(error);
+            return out;
+        }
+    };
+    let probe = Rule {
+        name: "草稿".into(),
+        watch_folders: vec!["草稿".into()],
+        ..rule.clone()
+    };
+    out.action_error = probe.validate().err();
+    let mut reserved = std::collections::HashSet::new();
+    for mut meta in entries {
+        if !matcher.matches(&meta) {
+            if out.unmatched.len() < DRAFT_UNMATCHED_LIMIT {
+                out.unmatched.push(meta.name);
+            }
+            continue;
+        }
+        out.matched += 1;
+        if out.items.len() >= DRAFT_LIMIT {
+            continue;
+        }
+        meta.captures = matcher.captures(&meta);
+        let mut item = DraftItem {
+            src: meta.path.to_string_lossy().to_string(),
+            name: meta.name.clone(),
+            is_directory: meta.is_directory,
+            captures: meta.captures.clone(),
+            ..Default::default()
+        };
+        if out.action_error.is_none() {
+            draft_steps(rule, &meta, at, &mut reserved, &mut item);
+        }
+        out.items.push(item);
+    }
+    out
+}
+
+fn draft_steps(
+    rule: &Rule,
+    meta: &FileMeta,
+    at: SystemTime,
+    reserved: &mut std::collections::HashSet<String>,
+    item: &mut DraftItem,
+) {
+    let mut current = meta.clone();
+    for action in &rule.actions {
+        if let Action::MoveAndExtract { dest, .. } = action {
+            item.steps.push(DraftStep {
+                kind: "move_extract".into(),
+                dest: Some(dest.clone()),
+            });
+            return;
+        }
+        let resolved = match crate::templates::resolve_at(action, &current, at) {
+            Ok(action) => action,
+            Err(error) => {
+                item.error = Some(error);
+                return;
+            }
+        };
+        let (kind, dest) = match &resolved {
+            Action::Move { dest } => ("move", Some(Path::new(dest).join(&current.name))),
+            Action::Copy { dest } => ("copy", Some(Path::new(dest).join(&current.name))),
+            Action::Rename { pattern } => {
+                if !crate::archive::valid_component(pattern) {
+                    item.error = Some(format!(
+                        "{}名称无效，不能包含路径或特殊字符。",
+                        if meta.is_directory {
+                            "文件夹"
+                        } else {
+                            "文件"
+                        }
+                    ));
+                    return;
+                }
+                if *pattern == current.name {
+                    continue;
+                }
+                ("rename", Some(current.path.with_file_name(pattern)))
+            }
+            Action::MoveToRecycleBin => ("recycle", None),
+            _ => continue,
+        };
+        let dest = dest.map(|path| {
+            if meta.is_directory {
+                return crate::directory::unique_destination(&path);
+            }
+            let mut candidate = unique_dest(&path);
+            let mut n = 1;
+            while reserved.contains(&crate::oplog::normalize_path(&candidate)) || candidate.exists()
+            {
+                candidate = numbered_dest(&path, n);
+                n += 1;
+            }
+            reserved.insert(crate::oplog::normalize_path(&candidate));
+            candidate
+        });
+        if let (Some(path), "move" | "rename") = (&dest, kind) {
+            current.path = path.clone();
+            current.name = path
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default();
+            if !meta.is_directory {
+                current.ext = path
+                    .extension()
+                    .map(|e| e.to_string_lossy().to_lowercase())
+                    .unwrap_or_default();
+            }
+        }
+        item.steps.push(DraftStep {
+            kind: kind.into(),
+            dest: dest.map(|p| p.to_string_lossy().to_string()),
+        });
+        if kind == "recycle" {
+            return;
+        }
     }
 }
 

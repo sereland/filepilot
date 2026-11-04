@@ -62,3 +62,16 @@ test("regex name conditions roundtrip and expose only non-excluded named capture
     assert.ok(Object.keys(validateRule({...example,conditions:[{type:"name_match",operator:"regex",keyword}]})).some(key=>key.startsWith("condition")),keyword);
   }
 });
+test("live summary describes empty fields inside condition groups with placeholders",async()=>{
+  const js=async source=>ts.transpileModule(await readFile(new URL(source,import.meta.url),"utf8"),{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText;
+  const toUrl=text=>"data:text/javascript;base64,"+Buffer.from(text).toString("base64");
+  const summary=(await js("../src/lib/ruleSummary.ts")).replace(/(["'])\.\/types\1/g,JSON.stringify(toUrl(await js("../src/lib/types.ts"))));
+  const {summarizeRule,normalizeRule}=await import(toUrl(summary));
+  const base={id:"",name:"",enabled:false,target_kind:"file",watch_folders:[" "],actions:[{type:"move",dest:""}]};
+  const empty=summarizeRule({...base,conditions:fromQuery(toQuery([{type:"extension",exts:[]}]))});
+  assert.ok(!empty.includes("扩展名为 ）"),empty);
+  assert.equal(empty,"在 来源文件夹 中，扩展名是所选文件类型 的文件，将移动到目标文件夹。仅手动执行。");
+  const filled=summarizeRule({...base,watch_folders:["D:\\下载"],conditions:[{type:"group",mode:"any",negate:false,conditions:[{type:"extension",exts:["xlsx"]},{type:"name_match",operator:"regex",keyword:""}]},{type:"group",mode:"all",negate:true,conditions:[]}]});
+  assert.equal(filled,"在 D:\\下载 中，（扩展名为 xlsx 或 文件名符合指定条件） 的文件，将移动到目标文件夹。仅手动执行。");
+  assert.deepEqual(normalizeRule({...base,name:" 报价 ",watch_folders:[" D:\\a ","D:\\a",""],conditions:[],actions:[{type:"copy",dest:" E:\\b "}]}),{...base,name:"报价",watch_folders:["D:\\a"],conditions:[],actions:[{type:"copy",dest:"E:\\b"}]});
+});
