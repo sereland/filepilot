@@ -1,6 +1,7 @@
 import { isTauri } from "@tauri-apps/api/core";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { api } from "../lib/api";
+import { captureVariables } from "../lib/ruleValidation";
 import { normalizeRule, summarizeRule } from "../lib/ruleSummary";
 import type { DraftItem, DraftPreview, DraftStep, Rule } from "../lib/types";
 
@@ -31,7 +32,7 @@ export default function LivePreview({ rule }: { rule: Rule }) {
   const data = result?.data;
   const problems = data?.items.filter((item) => item.error) ?? [];
   const ready = data?.items.filter((item) => !item.error) ?? [];
-  const captureNames = [...new Set(data?.items.flatMap((item) => Object.keys(item.captures)) ?? [])];
+  const captureNames = [...new Set([...captureVariables(rule.conditions), ...(data?.items.flatMap((item) => Object.keys(item.captures)) ?? [])])];
 
   let body: ReactNode;
   if (!desktop) body = <p className="lp-notice">实时预览需要在 FilePilot 桌面应用中查看。</p>;

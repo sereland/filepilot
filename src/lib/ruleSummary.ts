@@ -8,6 +8,32 @@ export function normalizeRule(rule: Rule): Rule {
     actions: rule.actions.map((action) => action.type === "move" || action.type === "copy" || action.type === "move_and_extract" || action.type === "organize" ? { ...action, dest: action.dest.trim() } : action) };
 }
 
+/** 未填写名称时的自动命名，例如“XLSX/XLS 文件按客户归档到报价”。 */
+export function autoRuleName(rule: Rule): string {
+  const objectName = rule.target_kind === "directory" ? "文件夹" : "文件";
+  const exts = [...new Set(positiveConditions(rule.conditions).flatMap((condition) => condition.type === "extension" ? condition.exts : []))];
+  const subject = exts.length ? `${exts.slice(0, 2).map((ext) => ext.toUpperCase()).join("/")}${exts.length > 2 ? " 等" : " "}${objectName}` : objectName;
+  const action = rule.actions[0];
+  const folder = (dest: string) => dest.trim().split(/[\\/]/).filter(Boolean).pop() ?? "";
+  let verb = "整理";
+  if (action) {
+    if (action.type === "move_to_recycle_bin") verb = "清理";
+    else if (action.type === "rename" || action.type === "rename_with_date") verb = "重命名";
+    else {
+      const target = folder(action.dest);
+      const base = action.type === "copy" || (action.type === "organize" && action.operation === "copy") ? "复制" : action.type === "move_and_extract" ? "解压" : "归档";
+      verb = target ? `${base}到${target}` : base;
+      const by = action.type === "organize" ? [...action.subfolder.matchAll(/\{([^{}]+)\}/g)].map((m) => ({ year: "年", month: "月", day: "日", date: "日期", ext: "类型" } as Record<string, string>)[m[1]] ?? m[1]).filter((v) => v !== "name") : [];
+      if (by.length) verb = `按${[...new Set(by)].join("")}${verb}`;
+    }
+  }
+  return `${subject}${verb}`.slice(0, 80);
+}
+
+function positiveConditions(conditions: Condition[]): Condition[] {
+  return conditions.flatMap((condition) => condition.type === "group" ? (condition.negate ? [] : positiveConditions(condition.conditions)) : [condition]);
+}
+
 /** 规则的一句话描述；未填写的部分用占位说明代替，包括条件组内部。 */
 export function summarizeRule(rule: Rule): string {
   const objectName = rule.target_kind === "directory" ? "文件夹" : "文件";

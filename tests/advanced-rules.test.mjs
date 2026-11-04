@@ -66,7 +66,7 @@ test("live summary describes empty fields inside condition groups with placehold
   const js=async source=>ts.transpileModule(await readFile(new URL(source,import.meta.url),"utf8"),{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText;
   const toUrl=text=>"data:text/javascript;base64,"+Buffer.from(text).toString("base64");
   const summary=(await js("../src/lib/ruleSummary.ts")).replace(/(["'])\.\/types\1/g,JSON.stringify(toUrl(await js("../src/lib/types.ts"))));
-  const {summarizeRule,normalizeRule}=await import(toUrl(summary));
+  const {summarizeRule,normalizeRule,autoRuleName}=await import(toUrl(summary));
   const base={id:"",name:"",enabled:false,target_kind:"file",watch_folders:[" "],actions:[{type:"move",dest:""}]};
   const empty=summarizeRule({...base,conditions:fromQuery(toQuery([{type:"extension",exts:[]}]))});
   assert.ok(!empty.includes("扩展名为 ）"),empty);
@@ -74,4 +74,8 @@ test("live summary describes empty fields inside condition groups with placehold
   const filled=summarizeRule({...base,watch_folders:["D:\\下载"],conditions:[{type:"group",mode:"any",negate:false,conditions:[{type:"extension",exts:["xlsx"]},{type:"name_match",operator:"regex",keyword:""}]},{type:"group",mode:"all",negate:true,conditions:[]}]});
   assert.equal(filled,"在 D:\\下载 中，（扩展名为 xlsx 或 文件名符合指定条件） 的文件，将移动到目标文件夹。仅手动执行。");
   assert.deepEqual(normalizeRule({...base,name:" 报价 ",watch_folders:[" D:\\a ","D:\\a",""],conditions:[],actions:[{type:"copy",dest:" E:\\b "}]}),{...base,name:"报价",watch_folders:["D:\\a"],conditions:[],actions:[{type:"copy",dest:"E:\\b"}]});
+  const quotes={...base,conditions:[{type:"extension",exts:["xlsx","xls"]},{type:"group",mode:"all",negate:true,conditions:[{type:"extension",exts:["tmp"]}]}],actions:[{type:"organize",operation:"move",dest:"D:\\工作\\报价\\",subfolder:"{客户}",date_source:"now"}]};
+  assert.equal(autoRuleName(quotes),"XLSX/XLS 文件按客户归档到报价");
+  assert.equal(autoRuleName({...base,conditions:[],actions:[{type:"organize",operation:"copy",dest:"",subfolder:"{year}/{month}",date_source:"now"}]}),"文件按年月复制");
+  assert.equal(autoRuleName({...base,target_kind:"directory",conditions:[],actions:[{type:"move_to_recycle_bin"}]}),"文件夹清理");
 });
