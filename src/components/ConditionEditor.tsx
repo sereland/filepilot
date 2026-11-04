@@ -7,19 +7,20 @@ import SelectField from "./SelectField";
 
 const operators = {
   extension:[{name:"in",label:"是"}],
-  name:[{name:"contains",label:"包含"},{name:"doesNotContain",label:"不包含"},{name:"=",label:"等于"},{name:"beginsWith",label:"开头是"},{name:"endsWith",label:"结尾是"}],
+  name:[{name:"contains",label:"包含"},{name:"doesNotContain",label:"不包含"},{name:"=",label:"等于"},{name:"beginsWith",label:"开头是"},{name:"endsWith",label:"结尾是"},{name:"regex",label:"匹配正则"}],
   size:[{name:">",label:"大于"},{name:"<",label:"小于"},{name:"between",label:"介于"}],
   date:[{name:"within",label:"最近"},{name:"older",label:"距今至少"}],
 };
 function ValueEditor(props: ValueEditorProps) {
   const invalid=props.validation === false || (!!props.validation && typeof props.validation === "object" && !props.validation.valid);
-  const label = props.field === "name" ? "名称关键词" : props.field === "size" ? "文件大小（MB）" : "天数";
+  const regex = props.field === "name" && props.operator === "regex";
+  const label = regex ? "正则表达式" : props.field === "name" ? "名称关键词" : props.field === "size" ? "文件大小（MB）" : "天数";
   if (props.field === "extension") return <ExtensionPicker values={Array.isArray(props.value) ? props.value : []} validation={{"aria-invalid":invalid || undefined}} onChange={props.handleOnChange}/>;
   if (props.field === "size" && props.operator === "between") {
     const values=Array.isArray(props.value)?props.value:String(props.value??"").split(",");
     return <div className="inline-fields range-values">{[0,1].map(index=><input key={index} aria-label={index?"大小上限（MB）":"大小下限（MB）"} aria-invalid={invalid || undefined} type="number" min={0} step="any" value={Number.isFinite(Number(values[index])) ? values[index] : ""} disabled={props.disabled} onChange={e=>props.handleOnChange(index?[values[0],e.target.value]:[e.target.value,values[1]])}/>)}<span>MB</span></div>;
   }
-  return <div className="inline-fields"><input aria-label={label} aria-invalid={invalid || undefined} type={props.field === "name" ? "text" : "number"} min={props.field === "size" ? 0 : 1} step={props.field === "size" ? "any" : 1} value={props.value??""} disabled={props.disabled} placeholder={props.field === "name" ? "例如：发票" : undefined} onChange={e=>props.handleOnChange(e.target.value)}/>{props.field !== "name" && <span>{props.field === "size" ? "MB" : "天"}</span>}</div>;
+  return <div className="inline-fields"><input aria-label={label} aria-invalid={invalid || undefined} type={props.field === "name" ? "text" : "number"} min={props.field === "size" ? 0 : 1} step={props.field === "size" ? "any" : 1} value={props.value??""} disabled={props.disabled} placeholder={regex ? "例如：^报价_(?<客户>[^_]+)_" : props.field === "name" ? "例如：发票" : undefined} spellCheck={regex ? false : undefined} onChange={e=>props.handleOnChange(e.target.value)}/>{props.field !== "name" && <span>{props.field === "size" ? "MB" : "天"}</span>}</div>;
 }
 export default function ConditionEditor({ conditions, isDirectory, submitted, onChange }: { conditions:Condition[]; isDirectory:boolean; submitted:boolean; onChange:(conditions:Condition[])=>void }) {
   // Keep the editor's raw values and IDs while typing (e.g. "0." MB).
@@ -36,10 +37,12 @@ export default function ConditionEditor({ conditions, isDirectory, submitted, on
       translations={{addRule:{label:"＋ 条件",title:"添加条件"},addGroup:{label:"＋ 条件组",title:"添加条件组"},removeRule:{label:"×",title:"删除条件"},removeGroup:{label:"×",title:"删除条件组"},notToggle:{label:"排除",title:"排除此组条件"},combinators:{title:"条件组合"},fields:{title:"条件字段"},operators:{title:"匹配方式"},value:{title:"条件内容"}}}
       combinators={[{name:"and",label:"全部满足"},{name:"or",label:"任一满足"}]} />
     <p className="editor-help">组内可选全部或任一满足，勾选“排除”表示不满足该组。扩展名内任一种均可匹配；名称不区分大小写。</p>
+    {hasRegex(conditions) && <p className="editor-help">正则匹配完整名称（含扩展名）。用 {"(?<客户>[^_]+)"} 这样的命名捕获组提取内容，即可在子文件夹和重命名模板中写 {"{客户}"}；排除组内的捕获不可引用。</p>}
     {hasDate(conditions) && <p className="editor-help">时间条件在文件夹变化或手动预览时检查；静置文件达到天数后，目前需要手动预览整理。</p>}
   </div>;
 }
 
+function hasRegex(conditions:Condition[]):boolean {return conditions.some(c=>(c.type === "name_match" && c.operator === "regex") || (c.type === "group" && hasRegex(c.conditions)));}
 function hasDate(conditions:Condition[]):boolean {return conditions.some(c=>c.type === "date_match" || c.type === "created_within_days" || (c.type === "group" && hasDate(c.conditions)));}
 
 function Selector(props:ValueSelectorProps) {

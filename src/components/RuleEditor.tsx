@@ -1,6 +1,6 @@
 import { useId, useRef, useState } from "react";
 import { api } from "../lib/api";
-import { validateRule } from "../lib/ruleValidation";
+import { captureVariables, validateRule } from "../lib/ruleValidation";
 import { describeAction, describeCondition, directoryConditions, newEmptyRule, type Action, type Condition, type DateSource, type Rule } from "../lib/types";
 import ConditionEditor from "./ConditionEditor";
 import Modal from "./Modal";
@@ -94,6 +94,7 @@ export default function RuleEditor({ initial, monitoring, onClose, onSaved }: {
         </div>)}
         {feedback("actions")}
         {!isDirectory && <button className="text-btn add-control" disabled={rule.actions.some((action) => action.type === "move_and_extract")} onClick={() => set({ actions: [...rule.actions, freshAction("move")] })}><IconPlus />添加动作</button>}
+        {captureVariables(rule.conditions).length > 0 && <p className="editor-help">可用提取变量：{captureVariables(rule.conditions).map((name) => `{${name}}`).join("、")}，取自原始{objectName}名。个别{objectName}未提取到时，预览会标出原因并跳过它。</p>}
         {isDirectory && <p className="editor-help">每条文件夹规则执行一个动作。内部仍在写入时会等待；不自动合并或替换其他版本。</p>}
         {rule.actions.some((action) => (action.type === "rename" || action.type === "rename_with_date")) && <p className="editor-help">支持 {"{name}"} 原{objectName}名、{!isDirectory && <>{"{ext}"} 扩展名、</>}{"{date}"} 日期、{"{datetime}"} 日期时间、{"{year}"} 年、{"{month}"} 月、{"{day}"} 日。移动或重命名后继续处理新路径；复制后仍处理原文件。</p>}
       </section>

@@ -146,6 +146,10 @@ fn dry_run_filtered_at(
                     _ => false,
                 })
         })
+        .map(|mut meta| {
+            meta.captures = matcher.captures(&meta);
+            meta
+        })
         .collect();
     files.sort_by_key(|meta| crate::oplog::normalize_path(&meta.path));
     if rule.target_kind == TargetKind::Directory {
@@ -460,7 +464,7 @@ pub fn confirmed_dry_run(
     Ok(plan)
 }
 
-/// 渲染重命名模板，支持变量 {name} {ext} {date} {datetime}
+/// 渲染重命名模板，支持变量 {name} {ext} {date} {datetime} 及正则命名捕获组
 pub fn render_rename(pattern: &str, meta: &FileMeta) -> String {
     crate::templates::render(pattern, meta, crate::rules::DateSource::Now)
         .unwrap_or_else(|_| pattern.into())
@@ -782,6 +786,7 @@ mod tests {
             size: 10,
             created: None,
             modified: None,
+            captures: Default::default(),
         };
         let out = render_rename("截图-{date}.{ext}", &meta);
         assert!(out.starts_with("截图-20"));

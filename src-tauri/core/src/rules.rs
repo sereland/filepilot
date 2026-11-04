@@ -3,6 +3,7 @@
 //! 保留旧条件与动作格式；条件组编译为 JSONLogic，文件动作可连续执行。
 
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
@@ -58,6 +59,8 @@ pub enum NameOperator {
     Equals,
     StartsWith,
     EndsWith,
+    /// 正则匹配完整名称；命名捕获组可在模板中以 {组名} 引用
+    Regex,
 }
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
 #[serde(rename_all = "snake_case")]
@@ -176,6 +179,8 @@ pub struct FileMeta {
     pub created: Option<SystemTime>,
     /// 最后修改时间（用于跳过正在写入的文件）
     pub modified: Option<SystemTime>,
+    /// 正则条件从原始名称中提取的命名捕获组
+    pub captures: BTreeMap<String, String>,
 }
 
 impl FileMeta {
@@ -197,6 +202,7 @@ impl FileMeta {
             size: md.len(),
             created: md.created().ok(),
             modified: md.modified().ok(),
+            captures: BTreeMap::new(),
         })
     }
 }
@@ -225,6 +231,7 @@ impl Condition {
                     NameOperator::Equals => "等于",
                     NameOperator::StartsWith => "开头是",
                     NameOperator::EndsWith => "结尾是",
+                    NameOperator::Regex => "匹配正则",
                 },
                 keyword
             ),
@@ -380,6 +387,10 @@ impl Rule {
                 size: 1,
                 created: Some(SystemTime::now()),
                 modified: Some(SystemTime::now()),
+                captures: crate::matching::capture_names(&self.conditions)
+                    .into_iter()
+                    .map(|name| (name, "示例".into()))
+                    .collect(),
             };
             if let Action::Rename { pattern } = crate::templates::resolve(action, &sample)? {
                 if !crate::archive::valid_component(&pattern) {
@@ -432,6 +443,7 @@ mod tests {
             size,
             created,
             modified: None,
+            captures: BTreeMap::new(),
         }
     }
 

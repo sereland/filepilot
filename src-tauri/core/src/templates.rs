@@ -39,11 +39,23 @@ pub fn render_at(
             "year" => time.format("%Y").to_string(),
             "month" => time.format("%m").to_string(),
             "day" => time.format("%d").to_string(),
-            _ => {
-                return Err(
-                    "未知模板变量；支持 name、ext、date、datetime、year、month、day。".into(),
-                )
-            }
+            "" => return Err("模板变量名不能为空。".into()),
+            other => match meta.captures.get(other) {
+                Some(value) if value.contains(['/', '\\']) => {
+                    return Err(format!("提取的「{other}」包含路径分隔符，未执行。"))
+                }
+                Some(value) => value.clone(),
+                None if crate::archive::valid_component(other) => {
+                    return Err(format!(
+                        "未知模板变量或未从名称中提取到「{other}」；内置变量支持 name、ext、date、datetime、year、month、day。"
+                    ))
+                }
+                None => {
+                    return Err(
+                        "未知模板变量；支持 name、ext、date、datetime、year、month、day 及正则命名捕获组。".into(),
+                    )
+                }
+            },
         });
         rest = &rest[end + 1..];
     }

@@ -202,6 +202,7 @@ fn dates_size_ranges_and_missing_metadata_are_fail_closed() {
         size: 100,
         created: None,
         modified: Some(SystemTime::now() - Duration::from_secs(10 * 86400)),
+        captures: Default::default(),
     };
     assert!(Condition::DateMatch {
         field: FileDate::Modified,

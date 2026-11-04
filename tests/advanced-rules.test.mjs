@@ -49,3 +49,16 @@ test("recycle must be the final action and chain records count as a single file"
   const records=[{src:"C:/a.pdf",origin_src:"C:/a.pdf"},{src:"C:/new-a.pdf",origin_src:"c:\\a.pdf"}];
   assert.equal(itemCountLabel(records),"1 个文件");assert.equal(uniqueFileCount(records),1);
 });
+test("regex name conditions roundtrip and expose only non-excluded named captures to templates",async()=>{
+  const {captureVariables}=await load("../src/lib/ruleValidation.ts");
+  const conditions=[{type:"group",mode:"all",negate:false,conditions:[{type:"name_match",operator:"regex",keyword:"^报价_(?<客户>[^_]+)_(?P<年>\\d{4})"},{type:"group",mode:"any",negate:true,conditions:[{type:"name_match",operator:"regex",keyword:"_(?<状态>草稿)"}]}]}];
+  assert.deepEqual(fromQuery(toQuery(conditions)),conditions);
+  assert.deepEqual(captureVariables(conditions),["客户","年"]);
+  const rule={...example,conditions,actions:[{type:"organize",operation:"move",dest:"D:\\工作",subfolder:"{客户}/{年}",date_source:"now"},{type:"rename",pattern:"{客户}_{name}.{ext}"}]};
+  assert.deepEqual(validateRule(rule),{});
+  assert.ok(validateRule({...rule,actions:[{...rule.actions[0],subfolder:"{状态}"}]})["action-0"]);
+  assert.ok(validateRule({...rule,actions:[{...rule.actions[0],subfolder:"{项目}"}]})["action-0"]);
+  for(const keyword of [" ","(?<name>.+)","a".repeat(501)]) {
+    assert.ok(Object.keys(validateRule({...example,conditions:[{type:"name_match",operator:"regex",keyword}]})).some(key=>key.startsWith("condition")),keyword);
+  }
+});
